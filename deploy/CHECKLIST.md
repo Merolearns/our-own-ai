@@ -40,7 +40,7 @@ repo secret and is never printed.
 ## 3. Trigger the deploy (browser, Actions tab -> deploy -> Run workflow)
 The workflow runs, in order: SSH setup -> repo sync at the exact SHA ->
 .env written from secrets (mode 600, never printed) -> compose copied ->
-`deploy-remote.sh` on the VPS: RAM gate (>= 3.5 GB free or abort with
+`deploy-remote.sh` on the VPS: RAM gate (>= 3.5 GB free, counting the running container's RAM as reclaimable on a redeploy, or abort with
 numbers), build on the VPS, up -d, /healthz poll up to 10 min (first boot
 downloads ~2.3 GB of models), end-to-end smoke (login + refund-policy
 question: $50 with sources, demo banner, no ShipFast), backup cron

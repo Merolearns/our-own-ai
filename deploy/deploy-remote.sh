@@ -6,7 +6,9 @@
 #
 # Steps, each failing loudly (set -euo pipefail; a failure aborts the run
 # and the workflow reports it — never silently serve a broken deploy):
-#   0. RAM gate: refuse unless >= 3.5 GB is free (app needs ~2.5 GB RSS).
+#   0. RAM gate: refuse unless >= 3.5 GB is free (app needs ~2.5 GB RSS);
+#      a running agent-platform container's RAM counts, since the redeploy
+#      frees it before the new container starts.
 #   1. Ensure AGENT_SECRET exists in /srv/agent-platform/.env (generated
 #      on first install, persisted in the .env, never printed).
 #   2. docker compose build (from /srv/agent-platform/repo) && up -d.
@@ -40,10 +42,22 @@ for cmd in docker git python3 openssl; do
 done
 
 # --- 0. RAM gate ------------------------------------------------------------
+# A redeploy replaces the running agent-platform container, so the RAM it
+# holds now is freed before the new one starts — count it toward the gate.
+# (Run 3 tripped the gate at 3340 MB free while the run-2 container held
+# 1.664 GiB; without the reclaim the gate double-counts the app's own
+# memory on every redeploy.)
 FREE_MB="$(free -m | awk '/^Mem:/ {print $7}')"
-log "free RAM: ${FREE_MB} MB (need >= 3584 MB for the app + SLATE headroom)"
-if [ "$FREE_MB" -lt 3584 ]; then
-  log "ERROR: not enough free RAM to start the app (free=${FREE_MB} MB, need 3584 MB)."
+RECLAIM_MB=0
+if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx 'agent-platform'; then
+  USAGE="$(docker stats --no-stream --format '{{.MemUsage}}' agent-platform 2>/dev/null | awk '{print $1}')"
+  RECLAIM_MB="$(echo "${USAGE:-0}" | awk '/GiB$/ {printf "%d", $1 * 1024; exit} /MiB$/ {printf "%d", $1; exit} /KiB$/ {printf "%d", $1 / 1024; exit} {print 0}')"
+  log "running agent-platform container holds ${USAGE:-unknown} (${RECLAIM_MB} MB) — freed on recreate, counted toward the gate"
+fi
+EFFECTIVE_MB=$((FREE_MB + RECLAIM_MB))
+log "free RAM: ${FREE_MB} MB (+ ${RECLAIM_MB} MB reclaimable = ${EFFECTIVE_MB} MB effective; need >= 3584 MB for the app + SLATE headroom)"
+if [ "$EFFECTIVE_MB" -lt 3584 ]; then
+  log "ERROR: not enough free RAM to start the app (free=${FREE_MB} MB + reclaimable=${RECLAIM_MB} MB = ${EFFECTIVE_MB} MB, need 3584 MB)."
   log "Do not lower the limit to force it — report the numbers instead."
   docker stats --no-stream --format '{{.Name}} {{.MemUsage}}' 2>/dev/null || true
   exit 1
