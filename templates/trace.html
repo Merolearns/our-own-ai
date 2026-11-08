@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Trace{% endblock %}
+{% block content %}
+{% set t = trace %}
+<p><a href="{{ url_for('traces') }}">Back to traces</a></p>
+<h1>{{ t.input_text|truncate(80) }}</h1>
+<dl class="facts">
+  <div><dt>Result</dt><dd>{% include "_outcome.html" %}</dd></div>
+  <div><dt>Model</dt><dd>{{ t.model_used or "none" }}{% if t.demo %} (no live model){% endif %}</dd></div>
+  <div><dt>Route tier</dt><dd>{{ t.router_tier or "none" }}</dd></div>
+  <div><dt>Cache</dt><dd>{{ t.cache_status }}</dd></div>
+  <div><dt>Retrieval</dt><dd>{{ t.retrieval_mode or "none" }}</dd></div>
+  <div><dt>Tokens</dt><dd>{{ t.total_tokens }}</dd></div>
+  <div><dt>Cost</dt><dd>${{ "%.5f"|format(t.total_cost_usd) }}</dd></div>
+  <div><dt>Time</dt><dd>{{ t.total_latency_ms }} ms</dd></div>
+  <div><dt>Config</dt><dd>{{ t.config_version }}</dd></div>
+</dl>
+
+<h2>Answer</h2>
+<p class="prose">{{ t.final_answer or "No answer recorded." }}</p>
+{% if t.error %}<p class="flash error">{{ t.error }}</p>{% endif %}
+
+<h2>Documents retrieved</h2>
+{% if steps.hits %}
+<div class="table-wrap"><table>
+  <thead><tr><th>Rank</th><th>Document</th><th>Title</th><th>Score</th></tr></thead>
+  <tbody>{% for h in steps.hits %}<tr><td class="num">{{ h.rank }}</td><td>{{ h.doc_id }}</td><td>{{ h.title }}</td><td class="num">{{ "%.4f"|format(h.score) }}</td></tr>{% endfor %}</tbody>
+</table></div>
+{% else %}<p class="empty">No documents were retrieved for this turn.</p>{% endif %}
+
+<h2>Tool calls</h2>
+{% if steps.tool_calls %}
+  {% for c in steps.tool_calls %}
+  <article class="panel">
+    <h3>{{ c.tool_name }} {% if c.success %}<span class="tag ok">Succeeded</span>{% else %}<span class="tag bad">Refused</span>{% endif %}</h3>
+    <pre>{{ c.args_json }}</pre>
+    <pre>{{ c.result_text }}</pre>
+  </article>
+  {% endfor %}
+{% else %}<p class="empty">Nova didn't use any tools for this turn.</p>{% endif %}
+
+<h2>Model calls</h2>
+{% if steps.llm_calls %}
+<div class="table-wrap"><table>
+  <thead><tr><th>Step</th><th>Provider</th><th>Model</th><th>In</th><th>Out</th><th>Time</th><th>Cost</th><th>Error</th></tr></thead>
+  <tbody>{% for c in steps.llm_calls %}<tr><td class="num">{{ c.step }}</td><td>{{ c.provider }}</td><td>{{ c.model }}</td><td class="num">{{ c.prompt_tokens or 0 }}</td><td class="num">{{ c.completion_tokens or 0 }}</td><td class="num">{{ c.latency_ms or 0 }} ms</td><td class="num">${{ "%.5f"|format(c.cost_usd or 0) }}</td><td>{{ c.error or "" }}</td></tr>{% endfor %}</tbody>
+</table></div>
+{% else %}<p class="empty">No model was called for this turn.</p>{% endif %}
+
+{% if is_staff and t.router_chain_json %}<h2>Router decisions</h2><pre class="panel">{{ from_json(t.router_chain_json)|tojson(indent=2) }}</pre>{% endif %}
+{% if is_staff and t.system_prompt %}<details class="panel"><summary>System prompt sent</summary><pre>{{ t.system_prompt }}</pre></details>{% endif %}
+{% endblock %}

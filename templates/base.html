@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
+  <title>{% block title %}{% endblock %} | Parcelco Nova</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="shell">
+    <aside class="rail">
+      <a href="{{ url_for('chat') }}" class="brand">Parcelco<span>Nova support</span></a>
+      {% if session.user_id %}
+      <nav aria-label="Main">
+        {% set here = request.endpoint %}
+        <a href="{{ url_for('chat') }}" {% if here == 'chat' %}aria-current="page"{% endif %}>Chat</a>
+        <a href="{{ url_for('traces') }}" {% if here in ('traces', 'trace_detail') %}aria-current="page"{% endif %}>Traces</a>
+        <a href="{{ url_for('security') }}" {% if here == 'security' %}aria-current="page"{% endif %}>Security</a>
+        {% if is_staff %}
+        <a href="{{ url_for('evals') }}" {% if here == 'evals' %}aria-current="page"{% endif %}>Evals</a>
+        <a href="{{ url_for('prompts') }}" {% if here == 'prompts' %}aria-current="page"{% endif %}>Prompts</a>
+        <a href="{{ url_for('approvals') }}" {% if here == 'approvals' %}aria-current="page"{% endif %}>Approvals</a>
+        {% endif %}
+      </nav>
+      <form class="who" method="post" action="{{ url_for('logout') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <span>{{ session.username }}{% if is_staff %} (staff){% endif %}</span>
+        <button class="quiet">Log out</button>
+      </form>
+      {% endif %}
+    </aside>
+    <main class="page">
+      {% if demo_label %}<p class="demo-banner" role="status">{{ demo_label }}</p>{% endif %}
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for category, message in messages %}<p class="flash {{ category }}" role="status">{{ message }}</p>{% endfor %}
+      {% endwith %}
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

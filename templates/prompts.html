@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Prompts{% endblock %}
+{% block content %}
+<h1>Prompts</h1>
+<p class="lede">Read-only. New versions are added as draft files and go live only after the evals pass, by changing <code>config/active.json</code>.</p>
+{% for p in prompts %}
+<article class="panel">
+  <h2>{{ p.version }} {% if p.live %}<span class="tag ok">Live</span>{% else %}<span class="tag warn">Draft</span>{% endif %}</h2>
+  <pre>{{ p.text }}</pre>
+</article>
+{% endfor %}
+{% endblock %}

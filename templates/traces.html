@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Traces{% endblock %}
+{% block content %}
+<h1>Traces</h1>
+<p class="lede">Every turn Nova handled, with the model, cost and outcome.{% if is_staff %} Total model spend so far: ${{ "%.4f"|format(spend) }}.{% endif %}</p>
+{% if traces %}
+<div class="table-wrap"><table>
+  <thead><tr><th>When (UTC)</th><th>Message</th><th>Model</th><th>Cache</th><th>Tokens</th><th>Cost</th><th>Time</th><th>Result</th></tr></thead>
+  <tbody>
+  {% for t in traces %}
+    <tr>
+      <td class="nowrap">{{ t.created_at[:16].replace("T", " ") }}</td>
+      <td class="wide"><a href="{{ url_for('trace_detail', trace_id=t.id) }}">{{ t.input_text|truncate(70) }}</a></td>
+      <td>{{ t.model_used or "none" }}{% if t.fallback_used %} (fallback){% endif %}</td>
+      <td>{{ t.cache_status }}</td>
+      <td class="num">{{ t.total_tokens }}</td>
+      <td class="num">${{ "%.5f"|format(t.total_cost_usd) }}</td>
+      <td class="num">{{ t.total_latency_ms }} ms</td>
+      <td>{% include "_outcome.html" %}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% else %}
+<p class="empty">No traces yet. <a href="{{ url_for('chat') }}">Send Nova a message</a> and it will appear here.</p>
+{% endif %}
+{% endblock %}

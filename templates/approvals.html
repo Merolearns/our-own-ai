@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Approvals{% endblock %}
+{% block content %}
+<h1>Refund approvals</h1>
+<p class="lede">Refunds above the automatic limit wait here. Each one is checked again when you approve it, and runs only once.</p>
+{% if pending %}
+  {% for a in pending %}
+  <article class="slip approval">
+    <h2>{{ a.description }}</h2>
+    <p class="muted">Customer's words: "{{ a.request_text }}"</p>
+    <p class="muted">Expires {{ a.expires_at[:16].replace("T", " ") }} UTC. Safety review: {{ a.judge_verdict }}. <a href="{{ url_for('trace_detail', trace_id=a.trace_id) }}">Open trace</a></p>
+    <ul class="checks">
+      {% for c in a.checks %}<li class="{{ 'pass' if c.passed else 'fail' }}"><strong>{{ "Pass" if c.passed else "Fail" }}</strong> {{ c.name.replace("_", " ") }}: {{ c.detail }}</li>{% endfor %}
+    </ul>
+    <pre>{{ a.args_json }}</pre>
+    <div class="actions">
+      <form method="post" action="{{ url_for('decide_approval', approval_id=a.id, decision='approve') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="args_hash" value="{{ a.args_hash }}">
+        <button class="primary">Approve refund</button>
+      </form>
+      <form method="post" action="{{ url_for('decide_approval', approval_id=a.id, decision='reject') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="quiet">Reject refund</button>
+      </form>
+    </div>
+  </article>
+  {% endfor %}
+{% else %}
+<p class="empty">No refunds are waiting for approval.</p>
+{% endif %}
+{% if decided %}
+<h2>Decided</h2>
+<div class="table-wrap"><table>
+  <thead><tr><th>Request</th><th>Status</th><th>Note</th></tr></thead>
+  <tbody>{% for a in decided %}<tr><td class="wide">{{ a.description }}</td><td><span class="tag {{ 'ok' if a.status == 'executed' else 'bad' }}">{{ a.status|capitalize }}</span></td><td>{{ a.decision_note or "" }}</td></tr>{% endfor %}</tbody>
+</table></div>
+{% endif %}
+{% endblock %}

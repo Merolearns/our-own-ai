@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Evals{% endblock %}
+{% block content %}
+<h1>Evals</h1>
+<p class="lede">A prompt or config change can only go live after it passes the golden set: at least 80% overall, no more than a 5 point drop from the baseline, and no hard failures.</p>
+{% if runs %}
+<div class="table-wrap"><table>
+  <thead><tr><th>When (UTC)</th><th>Agent</th><th>Config</th><th>Passed</th><th>Rate</th><th>Change</th><th>Gate</th></tr></thead>
+  <tbody>
+  {% for r in runs %}
+    <tr>
+      <td class="nowrap">{{ r.created_at[:16].replace("T", " ") }}</td>
+      <td>{{ r.agent_id }}</td><td>{{ r.config_version }}</td>
+      <td class="num">{{ r.passed }} of {{ r.total }}</td>
+      <td class="num">{{ "%.0f"|format(r.pass_rate * 100) }}%</td>
+      <td class="num">{% if r.delta is not none %}{{ "%+.1f"|format(r.delta * 100) }} pts{% else %}No baseline{% endif %}</td>
+      <td>{% if r.blocked %}<span class="tag bad">Failed</span>{% else %}<span class="tag ok">Passed</span>{% endif %}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+<h2>Latest run</h2>
+<div class="table-wrap"><table>
+  <thead><tr><th>Case</th><th>Result</th><th>Why</th></tr></thead>
+  <tbody>
+  {% for item in results %}{% set d = from_json(item.detail_json) %}
+    <tr><td>{{ item.case_id }}</td><td>{% if item.passed %}<span class="tag ok">Passed</span>{% else %}<span class="tag bad">Failed</span>{% endif %}</td><td class="wide">{{ d.failures|join("; ") }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% else %}
+<p class="empty">No eval runs yet. Run <code>python -m tools.eval_run --agent parcelco</code> to record the first one.</p>
+{% endif %}
+{% endblock %}

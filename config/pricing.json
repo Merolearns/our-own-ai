@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "source": "api-docs.deepseek.com/quick_start/pricing, read 2026-11-08. DeepSeek peak rates are used year-round so recorded cost never understates spend.",
+  "usd_per_million": {
+    "deepseek-flash": { "input": 0.3, "cached_input": 0.006, "output": 1.2 },
+    "gemini-3.5-flash-lite": { "input": 0, "cached_input": 0, "output": 0 },
+    "demo-template": { "input": 0, "cached_input": 0, "output": 0 }
+  }
+}

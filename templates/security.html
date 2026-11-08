@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Security{% endblock %}
+{% block content %}
+<h1>Security</h1>
+<p class="lede">Each attempt the guardrails stopped. Refund limits are enforced in server code, so a tricked model still can't move money.</p>
+<dl class="facts">
+  <div><dt>Automatic refund limit</dt><dd>{{ money(policy.auto_refund_max_cents) }}</dd></div>
+  <div><dt>Refund window</dt><dd>Under {{ policy.refund_window_days }} days</dd></div>
+  <div><dt>Daily refund cap</dt><dd>{{ policy.daily_refund_cap }} per customer</dd></div>
+  <div><dt>Staff approval expires</dt><dd>{{ policy.approval_expiry_hours }} hours</dd></div>
+  <div><dt>ML input classifier (L2)</dt><dd>Not installed</dd></div>
+</dl>
+<h2>Recent events</h2>
+{% if events %}
+<div class="table-wrap"><table>
+  <thead><tr><th>When (UTC)</th><th>Layer</th><th>Decision</th><th>Trigger</th><th>Detail</th></tr></thead>
+  <tbody>
+  {% for e in events %}
+    <tr>
+      <td class="nowrap">{{ e.created_at[:16].replace("T", " ") }}</td>
+      <td>{{ e.layer }}</td>
+      <td>{% if e.decision == "allowed" %}<span class="tag ok">Allowed</span>{% else %}<span class="tag bad">{{ e.decision|capitalize }}</span>{% endif %}</td>
+      <td>{{ e.trigger or "" }}</td>
+      <td class="wide code">{{ e.detail_json }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% else %}
+<p class="empty">Nothing has been blocked yet. Try asking Nova to ignore its instructions.</p>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,1 @@
+{% set v = t.validation or "" %}{% if v == "pass" %}<span class="tag ok">Passed</span>{% elif v.startswith("blocked") or v.startswith("fail:L4") %}<span class="tag bad">Blocked</span>{% else %}<span class="tag warn">{{ v or "Unknown" }}</span>{% endif %}

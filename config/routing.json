@@ -1,0 +1,64 @@
+{
+  "version": 1,
+  "models": {
+    "deepseek_flash": {
+      "provider": "deepseek",
+      "model": "deepseek-flash",
+      "free": false,
+      "model_id_verified": true,
+      "model_id_source": "api-docs.deepseek.com/quick_start/pricing, read 2026-11-08"
+    },
+    "gemini_flash_lite": {
+      "provider": "gemini",
+      "model": "gemini-3.5-flash-lite",
+      "free": true,
+      "model_id_verified": true,
+      "model_id_source": "aistudio.google.com/docs/models, read 2026-11-08",
+      "quota_verified": false,
+      "quota_note": "Free-tier limits must be read from AI Studio while signed in. None are assumed here."
+    },
+    "demo": {
+      "provider": "demo",
+      "model": "demo-template",
+      "free": true
+    }
+  },
+  "chains": {
+    "simple": ["gemini_flash_lite", "deepseek_flash"],
+    "standard": ["deepseek_flash", "gemini_flash_lite"],
+    "complex": ["deepseek_flash", "gemini_flash_lite"]
+  },
+  "attempts": {
+    "primary": 2,
+    "fallback": 1,
+    "total": 3
+  },
+  "backoff_seconds": 2,
+  "backoff_jitter": 0.25,
+  "max_retry_after_seconds": 30,
+  "timeouts": {
+    "simple": 30,
+    "standard": 30,
+    "complex": 60
+  },
+  "cooldown": {
+    "failures": 2,
+    "window_seconds": 60,
+    "seconds": 60
+  },
+  "budget_cap_usd": 5.0,
+  "temperature": 0.2,
+  "max_tool_rounds": 6,
+  "allow_semantic_cache": true,
+  "semantic_threshold": 0.93,
+  "cache_ttl_seconds": {
+    "faq": 86400,
+    "general": 604800
+  },
+  "retrieval": {
+    "cosine_floor": 0.28,
+    "candidates": 20,
+    "rrf_k": 60,
+    "top_k": 6
+  }
+}

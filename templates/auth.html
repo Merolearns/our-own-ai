@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}{{ "Log in" if mode == "login" else "Create account" }}{% endblock %}
+{% block content %}
+<section class="auth">
+  <div class="slip auth-slip">
+    <h1>{% if first_run %}Set up the first account{% elif mode == "login" %}Log in to Nova{% else %}Create an account{% endif %}</h1>
+    {% if first_run %}<p class="muted">This account gets six demo orders to try Nova with.</p>{% endif %}
+    {% if error %}<p class="flash error" role="alert">{{ error }}</p>{% endif %}
+    <form method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label for="username">Username</label>
+      <input id="username" name="username" autocomplete="username" required autofocus>
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" required
+             autocomplete="{{ 'current-password' if mode == 'login' else 'new-password' }}">
+      <button class="primary">{{ "Log in" if mode == "login" else "Create account" }}</button>
+    </form>
+    {% if mode == "login" %}
+      <p class="muted">New here? <a href="{{ url_for('register') }}">Create an account</a></p>
+    {% elif not first_run %}
+      <p class="muted">Already registered? <a href="{{ url_for('login') }}">Log in</a></p>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

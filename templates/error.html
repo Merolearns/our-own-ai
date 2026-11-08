@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Error {{ code }}{% endblock %}
+{% block content %}
+<section class="auth">
+  <div class="slip auth-slip">
+    <h1>Return to sender</h1>
+    <p>{{ message }}</p>
+    <p><a href="{{ url_for('chat') }}">Go to chat</a></p>
+  </div>
+</section>
+{% endblock %}

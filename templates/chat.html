@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Chat{% endblock %}
+{% block content %}
+<section class="chat">
+  <header class="chat-head">
+    <h1>Ask Nova about your parcels</h1>
+    <form method="post" action="{{ url_for('new_chat') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="quiet">New chat</button>
+    </form>
+  </header>
+  <div id="log" class="log" aria-live="polite"></div>
+  <div id="starters" class="starters" hidden>
+    <button class="quiet" data-prompt="What is your refund policy?">What is your refund policy?</button>
+    <button class="quiet" data-prompt="Where is order #1001?">Where is order #1001?</button>
+    <button class="quiet" data-prompt="I'd like a refund for order #1006, the parcel arrived damaged.">Refund a damaged parcel</button>
+  </div>
+  <form id="composer" class="composer">
+    <label class="sr" for="message">Message Nova</label>
+    <textarea id="message" rows="1" maxlength="8000" placeholder="Ask about an order, a refund or delivery" required></textarea>
+    <button class="primary" id="send">Send</button>
+  </form>
+</section>
+<script type="application/json" id="history">{{ history|tojson }}</script>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='chat.js') }}"></script>{% endblock %}
