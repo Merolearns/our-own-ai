@@ -2,7 +2,7 @@
 {% block title %}Traces{% endblock %}
 {% block content %}
 <h1>Traces</h1>
-<p class="lede">Every turn Nova handled, with the model, cost and outcome.{% if is_staff %} Total model spend so far: ${{ "%.4f"|format(spend) }}.{% endif %}</p>
+<p class="lede">Every turn {{ brand.name }} handled, with the model, cost and outcome.{% if is_staff %} Total model spend so far: ${{ "%.4f"|format(spend) }}.{% endif %}</p>
 {% if traces %}
 <div class="table-wrap"><table>
   <thead><tr><th>When (UTC)</th><th>Message</th><th>Model</th><th>Cache</th><th>Tokens</th><th>Cost</th><th>Time</th><th>Result</th></tr></thead>
@@ -22,6 +22,6 @@
   </tbody>
 </table></div>
 {% else %}
-<p class="empty">No traces yet. <a href="{{ url_for('chat') }}">Send Nova a message</a> and it will appear here.</p>
+<p class="empty">No traces yet. <a href="{{ url_for('chat') }}">Send {{ brand.name }} a message</a> and it will appear here.</p>
 {% endif %}
 {% endblock %}

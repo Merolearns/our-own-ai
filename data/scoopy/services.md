@@ -1,19 +1,13 @@
 # Scoopy Doog — Services
 
-Source: scoopydoog.com homepage, pooper-scooper-service page, and FAQ,
-read Nov 8, 2026.
-
 ## What Scoopy Doog is
 
-- **Scoopy Doog** — professional dog waste removal (pooper scooper service)
-  for home yards. Tagline: "Your dog poops, we scoop!"
-- Service area: **Orange County, CA** only. Do not claim service outside
-  Orange County.
+- **Scoopy Doog** — professional dog waste removal (pooper scooper service) for home yards. Tagline: "Your dog poops, we scoop!"
+- Service area: **Orange County, CA** only. Do not claim service outside Orange County.
 
 ## What is cleaned
 
-- Outdoor spaces only: front, back, and side yards, flower beds, dog runs,
-  and more.
+- Outdoor spaces only: front, back, and side yards, flower beds, dog runs, and more.
 - **No indoor cleaning.**
 
 ## Service frequencies
@@ -25,6 +19,4 @@ read Nov 8, 2026.
 ## Safety
 
 - Employees undergo background checks.
-- Dogs may stay in the yard during cleaning unless aggressive. Aggressive
-  dogs must be kept indoors. A home with an aggressive dog left outside may
-  be removed from the route.
+- Dogs may stay in the yard during cleaning unless aggressive. Aggressive dogs must be kept indoors. A home with an aggressive dog left outside may be removed from the route.

@@ -4,13 +4,13 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="csrf-token" content="{{ csrf_token() }}">
-  <title>{% block title %}{% endblock %} | Parcelco Nova</title>
+  <title>{% block title %}{% endblock %} | {{ brand.title }}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
   <div class="shell">
     <aside class="rail">
-      <a href="{{ url_for('chat') }}" class="brand">Parcelco<span>Nova support</span></a>
+      <a href="{{ url_for('chat') }}" class="brand">{{ brand.line }}<span>{{ brand.sub }}</span></a>
       {% if session.user_id %}
       <nav aria-label="Main">
         {% set here = request.endpoint %}

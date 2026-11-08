@@ -1,4 +1,8 @@
 const csrf = document.querySelector('meta[name="csrf-token"]').content;
+// The chat section carries the agent's display name (Nova / Scoopy Doog),
+// so waiting and error text names the agent this host serves.
+const agentName =
+  document.querySelector(".chat")?.dataset.agent || "Nova";
 const log = document.getElementById("log");
 const form = document.getElementById("composer");
 const input = document.getElementById("message");
@@ -66,7 +70,7 @@ function confirmBox(confirm) {
         result.ok ? "confirm-done" : "confirm-failed",
         result.data.message ||
           result.data.error ||
-          "That didn't work. Ask Nova again.",
+          `That didn't work. Ask ${agentName} again.`,
       ),
     );
   });
@@ -114,7 +118,7 @@ async function submit(text) {
   addUser(text);
   input.value = "";
   send.disabled = true;
-  const waiting = el("p", "waiting", "Nova is checking");
+  const waiting = el("p", "waiting", `${agentName} is checking`);
   log.append(waiting);
   scrollDown();
   try {

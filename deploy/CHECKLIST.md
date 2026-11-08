@@ -5,6 +5,11 @@ is live on the VPS at localhost:8001, smoke test green. The public URL
 still needs the one-time Caddy route (§4, handed to the SLATE side chat
 Nov 8 — pending their reply). Everything below is written; nothing is guessed.
 
+Agent 2 — Scoopy Doog (Nov 8, 2026): built locally, NOT yet pushed or
+deployed. The deploy is the same workflow re-run (§3) — no new secrets
+are required for it — plus the second Caddy block (§4b) and the Google
+OAuth parent step (§5b). See images/BUILD_REPORT_SCOOPY.md.
+
 ## 1. Parent action A — land the workflow files (browser, GitHub web UI)
 DONE Nov 8, 2026 (commit 1be8003, via the repo web UI). The rest of this
 section is the record of how it was done.
@@ -91,6 +96,18 @@ slate-caddy to the agent-platform_default network — localhost:8001 does not
 work from inside the Caddy container. See deploy/caddy-snippet for the
 applied block. SLATE healthy after the reload.
 
+## 4b. Agent 2 — Scoopy Caddy route (parent / SLATE side chat, vps-ops)
+Same pattern as §4, second block in `deploy/caddy-snippet`:
+`scoopy.40.160.149.104.nip.io` -> `reverse_proxy agent-platform:8000`
+(the SAME container, SAME port — one process serves both agents, picked
+by the Host header). The Caddy container is already on the
+agent-platform_default network from the Parcelco route, so no new
+`docker network connect` is needed. Append below the Parcelco block,
+`caddy validate`, reload only on exit 0. After the route is live, verify
+firsthand: healthz + login + a pricing question through
+https://scoopy.40.160.149.104.nip.io/ and screenshot the chat page as
+`images/14-scoopy-live.png`.
+
 ## 5. After the first deploy — live-model keys (parent, when ready)
 The first deploy runs in DEMO MODE (no LLM keys): the app answers from its
 rule-based demo client and shows the "demo mode — no live model" banner.
@@ -99,6 +116,33 @@ To go live-model, set the repo secrets `DEEPSEEK_API_KEY` and
 the repo), then re-run the deploy workflow — it rewrites the .env and
 restarts the container. Verify afterwards: the banner disappears and the
 eval gate still passes (`python -m tools.eval_run --agent parcelco`).
+
+## 5b. Agent 2 — Google OAuth client (parent, after the Scoopy deploy)
+Real Scoopy customers sign in with Google. The code path is built
+(`oauth.py`, Authlib) but the Google OAuth client does not exist yet —
+creating it is a ~10-minute parent step in Google Cloud Console (his
+Google login), then the two values go in the VPS `.env` (never the repo):
+1. Google Cloud Console -> APIs & Services -> Credentials -> Create
+   Credentials -> OAuth client ID -> Web application. Name it
+   "Scoopy Doog support".
+2. Authorized redirect URI (exact):
+   `https://scoopy.40.160.149.104.nip.io/auth/google/callback`
+   (Authorized JavaScript origins: `https://scoopy.40.160.149.104.nip.io`).
+   No localhost redirect is needed: sign-in happens on the live host.
+3. Copy the client ID and client secret into the VPS `.env` as
+   `GOOGLE_OAUTH_CLIENT_ID` and `GOOGLE_OAUTH_CLIENT_SECRET`, then restart
+   the container (`docker compose restart` in /srv/agent-platform, or
+   re-run the deploy workflow).
+4. NOTE: the deploy workflow writes the VPS .env from a FIXED list of
+   repo secrets, and the Google pair is NOT in that list (workflow files
+   can only be edited in the repo web UI). Until the workflow gains the
+   two lines, set the pair directly in the VPS .env — a deploy re-run
+   overwrites the .env, so re-add them after any re-deploy, or add the
+   two secrets + two lines to deploy.yml in the web UI once and be done.
+Until the client exists, logins fall back to PBKDF2 password accounts
+(the same pattern as the Parcelco demo accounts) and the "Continue with
+Google" link stays hidden. Nothing blocks on this: the Scoopy deploy
+ships first, OAuth lands after.
 
 ## 6. Backups — status
 `deploy/backup.sh` (nightly 03:30 UTC cron, installed by the deploy) backs

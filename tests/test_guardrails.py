@@ -81,13 +81,18 @@ def test_wrap_escapes_delimiter_breakout():
         ("My key is sk-abcdefghijklmnopqrstuv", "secret-pattern"),
         ("Here it is: AIzaSyA1234567890abcdefghijklmnopqrstu", "secret-pattern"),
         ("api_key = hunter2", "secret-pattern"),
+        # S1: a pasted card was echoed as a fake order number. Luhn-valid
+        # card numbers are blocked at L4, like any other secret.
+        ("My card is 4111111111111111", "card-number"),
+        ("4111 1111 1111 1111", "card-number"),
+        ("4111-1111-1111-1111", "card-number"),
     ],
 )
 def test_output_blocked(text, trigger):
     assert guardrails.validate_output(text) == {"blocked": True, "layer": "L4", "trigger": trigger}
 
 
-@pytest.mark.parametrize("text", ["Your order shipped [1].", "I can't recommend ShipFast.", "ShipFast is a carrier."])
+@pytest.mark.parametrize("text", ["Your order shipped [1].", "I can't recommend ShipFast.", "ShipFast is a carrier.", "Call (714) 933-8654 for help.", "Order #1001 shipped.", "The total is $1,234.56.", "4111111111111112 is not a valid card."])
 def test_output_allowed(text):
     assert guardrails.validate_output(text)["blocked"] is False
 

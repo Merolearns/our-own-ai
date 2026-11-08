@@ -37,7 +37,7 @@
     <pre>{{ c.result_text }}</pre>
   </article>
   {% endfor %}
-{% else %}<p class="empty">Nova didn't use any tools for this turn.</p>{% endif %}
+{% else %}<p class="empty">{{ brand.name }} didn't use any tools for this turn.</p>{% endif %}
 
 <h2>Model calls</h2>
 {% if steps.llm_calls %}

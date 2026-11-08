@@ -121,6 +121,21 @@ def demo_step(user, tools=True, system="", extra=()):
     return llm.DemoClient().chat(messages, tools=registry.list_tools("parcelco") if tools else None)
 
 
+def test_gemini_temperature_dropped_for_35_models(post):
+    # S2: temperature is deprecated for Gemini 3.5+ — the client must not
+    # send it. Older models still get it.
+    calls = post(Response(body=GEMINI_OK))
+    llm.GeminiClient("k").chat(
+        [{"role": "user", "content": "x"}], model="gemini-3.5-flash-lite"
+    )
+    assert "generationConfig" not in calls[0]["json"]
+    llm.GeminiClient("k").chat(
+        [{"role": "user", "content": "x"}], model="gemini-2.0-flash"
+    )
+    # The post fixture shares one calls list: the second request is calls[1].
+    assert calls[1]["json"]["generationConfig"] == {"temperature": 0.2}
+
+
 def test_demo_status_lookup():
     assert demo_step("Where is order #1001?")["tool_calls"][0]["arguments"] == {"order_id": "1001"}
 

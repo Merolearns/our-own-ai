@@ -349,6 +349,16 @@ def init_db(db_path) -> None:
     with _connect(db_path) as conn:
         conn.execute("PRAGMA journal_mode=WAL")
         conn.executescript(SCHEMA)
+        # Google OAuth sign-in (Scoopy Doog customers): the Google subject id
+        # links an account to its Google login. Added after the first deploy;
+        # existing databases gain the column here instead of a rebuild.
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(users)")}
+        if "google_sub" not in columns:
+            conn.execute("ALTER TABLE users ADD COLUMN google_sub TEXT")
+            conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google_sub "
+                "ON users(google_sub) WHERE google_sub IS NOT NULL"
+            )
 
 
 def backup(source_path, target_path) -> None:
@@ -360,16 +370,40 @@ def backup(source_path, target_path) -> None:
 # Users
 
 
-def create_user(db_path, username, password_hash, role="customer") -> int:
+def create_user(db_path, username, password_hash, role="customer", google_sub=None) -> int:
+    """google_sub links a Google OAuth login. OAuth-only accounts carry an
+    empty password hash, so they can never sign in with a password."""
     with _connect(db_path) as conn:
         try:
             cur = conn.execute(
-                "INSERT INTO users (username, password_hash, role, created_at) VALUES (?, ?, ?, ?)",
-                (username, password_hash, role, _utc_now()),
+                "INSERT INTO users (username, password_hash, role, google_sub, created_at) VALUES (?, ?, ?, ?, ?)",
+                (username, password_hash, role, google_sub, _utc_now()),
             )
             return cur.lastrowid
         except sqlite3.IntegrityError:
             raise ValueError("username taken")
+
+
+def get_user_by_google_sub(db_path, google_sub):
+    with _connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT * FROM users WHERE google_sub = ?", (google_sub,)
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def set_google_sub(db_path, user_id, google_sub):
+    """Link a Google login to an existing password account (same verified
+    email). Returns False when the Google id already belongs to someone."""
+    with _connect(db_path) as conn:
+        try:
+            cur = conn.execute(
+                "UPDATE users SET google_sub = ? WHERE id = ?",
+                (google_sub, user_id),
+            )
+            return cur.rowcount == 1
+        except sqlite3.IntegrityError:
+            return False
 
 
 def get_user(db_path, username):

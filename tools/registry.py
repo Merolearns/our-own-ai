@@ -7,11 +7,11 @@ import time
 from jsonschema import Draft202012Validator
 
 import store
-from tools import parcelco
+from tools import parcelco, scoopy
 
 log = logging.getLogger(__name__)
 
-REGISTRY = {"parcelco": parcelco.TOOLS}
+REGISTRY = {"parcelco": parcelco.TOOLS, "scoopy": scoopy.TOOLS}
 
 # Who may call what. A tool missing here does not exist for that role. Staff rule
 # on refund proposals in the approval queue; they never call issue_refund.
@@ -20,7 +20,15 @@ ALLOW_LIST = {
         "customer": {"check_order_status", "issue_refund", "open_ticket"},
         "staff": {"check_order_status", "open_ticket"},
         "admin": {"check_order_status", "open_ticket"},
-    }
+    },
+    # Scoopy Doog has no order system: no order lookup, no refund, no
+    # scheduling, no payment tool exists for any role. Staff see the same
+    # two tools as customers — the ticket queue is the shared inbox.
+    "scoopy": {
+        "customer": {"open_ticket", "check_service_area"},
+        "staff": {"open_ticket", "check_service_area"},
+        "admin": {"open_ticket", "check_service_area"},
+    },
 }
 
 

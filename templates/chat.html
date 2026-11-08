@@ -1,9 +1,9 @@
 {% extends "base.html" %}
 {% block title %}Chat{% endblock %}
 {% block content %}
-<section class="chat">
+<section class="chat" data-agent="{{ brand.name }}">
   <header class="chat-head">
-    <h1>Ask Nova about your parcels</h1>
+    <h1>{{ brand.chat_heading }}</h1>
     <form method="post" action="{{ url_for('new_chat') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <button class="quiet">New chat</button>
@@ -11,13 +11,19 @@
   </header>
   <div id="log" class="log" aria-live="polite"></div>
   <div id="starters" class="starters" hidden>
+    {% if brand.id == "scoopy" %}
+    <button class="quiet" data-prompt="What do Scoopy Doog plans cost per month?">What do plans cost?</button>
+    <button class="quiet" data-prompt="What happens when the technician visits my yard?">What happens on a visit?</button>
+    <button class="quiet" data-prompt="Please call me back about a quote for my yard.">Ask for a call back</button>
+    {% else %}
     <button class="quiet" data-prompt="What is your refund policy?">What is your refund policy?</button>
     <button class="quiet" data-prompt="Where is order #1001?">Where is order #1001?</button>
     <button class="quiet" data-prompt="I'd like a refund for order #1006, the parcel arrived damaged.">Refund a damaged parcel</button>
+    {% endif %}
   </div>
   <form id="composer" class="composer">
-    <label class="sr" for="message">Message Nova</label>
-    <textarea id="message" rows="1" maxlength="8000" placeholder="Ask about an order, a refund or delivery" required></textarea>
+    <label class="sr" for="message">{{ brand.composer_label }}</label>
+    <textarea id="message" rows="1" maxlength="8000" placeholder="{{ brand.composer_placeholder }}" required></textarea>
     <button class="primary" id="send">Send</button>
   </form>
 </section>

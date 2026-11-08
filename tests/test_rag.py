@@ -2,6 +2,7 @@ from pathlib import Path
 import tempfile
 
 import numpy as np
+import pytest
 
 import rag
 import store
@@ -56,6 +57,44 @@ def test_ingest_skips_order_data(db):
     chunks = store.list_chunks(db, "parcelco")
     assert chunks and "orders.md" not in {c["doc_id"] for c in chunks}
     assert not any("ShipFast" in c["text"] for c in chunks)
+
+
+def test_ingest_skips_readme_docs(db):
+    # README files are builder notes, not customer knowledge: they never
+    # reach the corpus (the Scoopy README holds the [VERIFY] list and the
+    # rejected-label rule, which belongs in the prompt, not in retrieval).
+    docs = Path(__file__).parent.parent / "data" / "scoopy"
+    rag.ingest_docs(db, "scoopy", docs, rag.FakeEmbedder())
+    doc_ids = {c["doc_id"] for c in store.list_chunks(db, "scoopy")}
+    assert "README.md" not in doc_ids
+    assert doc_ids == {
+        "booking-billing.md",
+        "contact.md",
+        "faq.md",
+        "pricing.md",
+        "services.md",
+        "visit-process.md",
+    }
+
+
+def test_ingest_screens_secrets_loudly(db, tmp_path):
+    # S3: a document holding a secret-like value stops the ingest instead
+    # of slipping into the corpus where retrieval could quote it.
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "ok.md").write_text("# Ok\n\nNothing secret here.")
+    (docs / "bad.md").write_text("# Bad\n\nMy key is sk-abcdefghijklmnopqrstuv.")
+    with pytest.raises(ValueError, match="secret pattern"):
+        rag.ingest_docs(db, "parcelco", docs, rag.FakeEmbedder())
+    assert store.list_chunks(db, "parcelco") == []
+
+
+def test_ingest_screens_card_numbers(db, tmp_path):
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "bad.md").write_text("# Bad\n\nMy card is 4111111111111111.")
+    with pytest.raises(ValueError, match="card-number"):
+        rag.ingest_docs(db, "parcelco", docs, rag.FakeEmbedder())
 
 
 def test_ensure_ingested_only_rebuilds_when_needed(db):

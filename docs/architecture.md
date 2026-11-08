@@ -52,15 +52,52 @@ a plain module it calls in order.
 
 | Layer | File(s) |
 |---|---|
-| 1. System prompt | `config/prompts/parcelco.v1.txt` (versioned, never edited live) |
+| 1. System prompt | `config/prompts/parcelco.v1.txt`, `config/prompts/scoopy.v1.txt` (versioned, never edited live) |
 | 2. RAG | `rag.py`, `data/<agent>/`, `store.py` chunks + FTS5 |
-| 3. Tools (MCP-shaped) | `tools/registry.py`, `tools/parcelco.py` |
-| 4. Access control | `auth.py` (PBKDF2), `tools/registry.py` ALLOW_LIST, `app.py` role decorators |
+| 3. Tools (MCP-shaped) | `tools/registry.py`, `tools/parcelco.py`, `tools/scoopy.py` |
+| 4. Access control | `auth.py` (PBKDF2), `oauth.py` (Google OAuth), `tools/registry.py` ALLOW_LIST, `app.py` role decorators |
 | 5. Guardrails | `guardrails.py` (L1/L3/L4/L5/L6; L2 Prompt Guard 2 not installed) |
 | 6. Cache | `cache.py`, `store.py` cache_entries |
 | 7. Router | `router.py`, `config/routing.json`, `config/pricing.json` |
 | 8. Observability | `store.py` traces/llm_calls/tool_calls/retrieval_hits, `app.py` /traces |
 | 9. Evals gate | `tools/eval_run.py`, `evals/`, `tests/test_*eval*.py` |
+
+## Agents on one process (host routing)
+
+One process serves every agent; the request Host header picks which one
+(`app.resolve_agent`): `agents.40.160.149.104.nip.io` -> parcelco,
+`scoopy.40.160.149.104.nip.io` -> scoopy, anything else -> parcelco (the
+default, so existing behaviour is unchanged). The model loads once; the
+switch is cheap (prompt + tools + corpus partition per request). Both
+corpora are ingested at startup and `/healthz` requires chunks for every
+agent. There is deliberately no second container: the 8 GB VPS cannot
+hold two app processes at peak (one peaks at ~2.5 GB with BGE-M3), and
+the RAM gate is never lowered to force it.
+
+One agent definition = prompt file + tools module + registry entry +
+allow-list entry + `data/<agent>/` corpus + `evals/<agent>/cases.jsonl`.
+The active config per agent lives in `config/<agent>.json` (eval runs
+pass `--config`); the Flask path loads the Parcelco default and
+`AGENT_PROMPTS` supplies the rest. The store, cache, and traces are
+partitioned by agent; the refund-confirm flow and the staff approval
+queue are Parcelco-only (Scoopy has no money movement).
+
+## Agent 2 — Scoopy Doog
+
+Real dog waste removal business (Orange County, CA). The bar is higher
+than the Parcelco demo: a wrong price or a promised offer costs real
+money and trust, so nothing the agent says may go beyond the verified
+knowledge base in `data/scoopy/` (read from scoopydoog.com, Nov 8, 2026).
+Tools are honest about the missing backend: `open_ticket` (callback /
+quote follow-up, staff follow up by phone) and `check_service_area`
+(Orange County generally; the exact city list is not published, so it
+never confirms a specific city). No order lookup, refund, scheduling, or
+payment tool exists — there is no backend for them, and booking stays on
+the website's Free Quote flow. The prompt states the [VERIFY] deflection
+rule and the ban on the "residential sanitation service" label. Ingest
+screens documents for secret patterns and refuses loudly (S3); the
+`data/scoopy/README.md` builder notes are excluded from the corpus
+(`rag.SKIP_DOCS`).
 
 ## Approval gates
 
@@ -80,18 +117,27 @@ PBKDF2-HMAC-SHA256, 200,000 iterations (`auth.py`, house pattern). Roles:
 `customer`, `staff`, `admin`. Sessions are Flask signed cookies
 (`HttpOnly`, `SameSite=Lax`, `Secure` on the live site). CSRF on every
 state-changing route. Demo accounts seed from env vars at first boot.
-Google OAuth (Authlib) for real Scoopy Doog customers is a later step;
-until then PBKDF2 accounts are the stopgap.
+Google OAuth (Authlib) for real Scoopy Doog customers (`oauth.py`):
+the client is created by the parent in Google Cloud Console
+(`GOOGLE_OAUTH_CLIENT_ID` / `GOOGLE_OAUTH_CLIENT_SECRET` in the VPS
+`.env`, never the repo); until it exists, logins fall back to PBKDF2
+accounts and the "Continue with Google" link stays hidden. A verified
+Google identity maps to a local account by subject id (`users.google_sub`,
+unique); a verified email that already has a password account links to
+it. OAuth-only accounts carry an empty password hash and can never sign
+in by password. Behind Caddy the app runs `ProxyFix` (x_proto, x_host)
+so the OAuth redirect URI builds as https for the public host.
 
 ## Deployment shape
 
 One Docker container (`Dockerfile`: python:3.12-slim, gunicorn,
 `/data/agent.db`, models under `/data/models`). Shares the OVH VPS with
-SLATE: own Compose project under `/srv/agent-platform/`, own Caddy route,
-nightly off-box SQLite backups. Measured runtime memory with BGE-M3 +
-reranker loaded is ~2.5 GB — the container needs real memory limits, not
-the 512 MB in the first draft plan. Deploy and CI live in `deploy/` and
-`.github/` (Builder C).
+SLATE: own Compose project under `/srv/agent-platform/`, own Caddy routes
+(`agents.*` and `scoopy.*`, both to the same container), nightly off-box
+SQLite backups. Measured runtime memory with BGE-M3 + reranker loaded is
+~2.5 GB — the container needs real memory limits, not the 512 MB in the
+first draft plan. Deploy and CI live in `deploy/` and `.github/`
+(Builder C).
 
 ## What is NOT built (deliberately)
 

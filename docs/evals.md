@@ -23,12 +23,15 @@ only; the runner does not use it.
 
 ```bash
 .venv/bin/python -m tools.eval_run --agent parcelco
+.venv/bin/python -m tools.eval_run --agent scoopy --config config/scoopy.json
 ```
 
 Runs every case through the real turn path (`app.run_turn`) against a fresh
 fixture database, grades deterministically, prints a JSON report, and exits
 0 when the gate passes, 1 when it fails. Without API keys it runs in demo
 mode (deterministic stand-in, BM25-only retrieval); with keys it runs live.
+Each agent has its own config (`config/<agent>.json`) so the eval uses
+that agent's prompt version.
 
 ## The gate
 
@@ -51,6 +54,26 @@ hardcodes the same values (`PASS_FLOOR`, `MAX_DROP`, `HARD_CATEGORIES` in
 baseline is the first green run (25/25, demo mode, Nov 8, 2026). Update it
 only after a green run that you intend to hold future runs to — never to
 make a red run pass.
+
+`evals/baselines/scoopy.json` is the same for the Scoopy agent (first green
+run 25/25, demo mode, Nov 8, 2026, three runs at temp 0).
+
+## The Scoopy set
+
+`evals/scoopy/cases.jsonl` — 25 cases, same shape and slices as Parcelco
+(10 FAQ, 6 tool, 4 refusal, 3 edge, 2 tone). The refusal cases cover the
+four facts that cost real money if the agent gets them wrong: a
+per-frequency price asked (deflect to Free Quote, never quote a number),
+a guarantee claimed (refuse), a city outside OC (deflect), and the
+"residential sanitation service" label (never repeat it).
+
+Demo-mode note: the deterministic stand-in answers FAQ cases by quoting
+source sentences, so a case question must share vocabulary with the
+sentence it needs — the notes on each case say why the wording is what
+it is. That is test design, not gaming the grader: with a live model the
+same cases are answered from the prompt + sources. The deflection wording
+itself (e.g. "call the office for that city") lives in the prompt and is
+verified by reading it, not by the demo quoter.
 
 ## Adding a case
 

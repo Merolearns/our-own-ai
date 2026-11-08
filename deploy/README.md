@@ -11,9 +11,9 @@ Owner: Builder C (Codex, ops). Nothing outside `.github/`, `deploy/`, and
 | `.github/workflows/measure-vps.yml` | One-off read-only host measurement via the `slate-vps` self-hosted runner (free/df/docker stats). Diagnostic: proves whether that runner is visible to this repo. Nothing is written. |
 | `.github/workflows/deploy.yml` | Manual deploy (workflow_dispatch only). SSH setup, repo sync at the exact SHA, .env written from secrets, compose copied, then `deploy-remote.sh` on the VPS. Fails loudly on any missing required secret, failed health check, failed smoke test, or low disk. |
 | `deploy/deploy-remote.sh` | The VPS-side deploy script: RAM gate (>= 3.5 GB free, counting a running agent-platform container's RAM as reclaimable on a redeploy, or abort with numbers), AGENT_SECRET generation on first install, `docker compose build` + `up -d`, /healthz poll up to 10 min, smoke test, backup cron install, disk guard. Never touches SLATE's files. |
-| `deploy/smoke-test.py` | End-to-end smoke run on the VPS: /healthz, login as demo, demo banner, refund-policy question ($50 with sources, never $500), #1003 injection note (no ShipFast). Stdlib only; never prints a secret. |
-| `deploy/docker-compose.yml` | The VPS Compose project (`/srv/agent-platform/docker-compose.yml`). One service, built ON THE VPS from the repo checkout (deliberately not in Actions — the Actions budget is nearly exhausted), gunicorn on `:8000` inside the container, host port 8001 bound to loopback only, named volume `agent-data:/data`, `mem_limit: 3g`, `cpus: 1.0`, `restart: unless-stopped`, env file `/srv/agent-platform/.env`, `/healthz` healthcheck. |
-| `deploy/caddy-snippet` | Caddy route for `agents.40.160.149.104.nip.io` reverse-proxying to `localhost:8001`, kept separate from SLATE's routes. One-time manual append to the VPS Caddyfile + `caddy validate` before reload — a bad Caddyfile takes down SLATE too. |
+| `deploy/smoke-test.py` | End-to-end smoke run on the VPS: /healthz, login as demo, demo banner, refund-policy question ($50 with sources, never $500), #1003 injection note (no ShipFast), then the Scoopy host (same container, Host header): Scoopy branding, $60 pricing answer, per-frequency-price refusal (not published, never a quoted price), callback ticket. Stdlib only; never prints a secret. |
+| `deploy/docker-compose.yml` | The VPS Compose project (`/srv/agent-platform/docker-compose.yml`). One service, built ON THE VPS from the repo checkout (deliberately not in Actions — the Actions budget is nearly exhausted), gunicorn on `:8000` inside the container, host port 8001 bound to loopback only, named volume `agent-data:/data`, `mem_limit: 3g`, `cpus: 1.0`, `restart: unless-stopped`, env file `/srv/agent-platform/.env`, `/healthz` healthcheck. One container serves BOTH agents (host routing in `app.py`); there is deliberately no second service — the 8 GB box cannot hold two app processes at peak. |
+| `deploy/caddy-snippet` | Caddy routes for `agents.40.160.149.104.nip.io` AND `scoopy.40.160.149.104.nip.io`, both reverse-proxying to the same container (`agent-platform:8000`), kept separate from SLATE's routes. One-time manual append to the VPS Caddyfile + `caddy validate` before reload — a bad Caddyfile takes down SLATE too. |
 | `deploy/backup.sh` | Nightly off-box backup (SQLite snapshot -> Cloudflare R2 via awscli v2, upload verified by size, fail-closed). Runs on the VPS via cron (03:30 UTC, offset from SLATE's 03:00). R2 credentials come from env only — never in this file or the repo. DB-only: the chunks table lives in the same SQLite file and /data/models is re-downloadable. |
 | `deploy/CHECKLIST.md` | The first-deploy checklist: the two parent-side browser actions (workflow files + repo secrets), what the deploy does, the Caddy step, going live-model, backup status. |
 
@@ -47,7 +47,10 @@ secrets are written to `/srv/agent-platform/.env` on the VPS:
 plus the backup credentials `BACKUP_R2_ENDPOINT`, `BACKUP_R2_BUCKET`,
 `BACKUP_R2_ACCESS_KEY_ID`, `BACKUP_R2_SECRET_ACCESS_KEY`. `AGENT_SECRET`
 is generated on first install by the deploy script and persisted in the
-VPS .env. The `.env` file is not committed anywhere.
+VPS .env. The `.env` file is not committed anywhere. Google OAuth for
+Scoopy (`GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`) is NOT
+written by the deploy workflow — its .env list is fixed (see
+CHECKLIST.md §5b) — set the pair directly in the VPS .env.
 
 ## Backups — MANDATORY before real users
 

@@ -2,6 +2,10 @@
 
 Last updated: November 2026.
 
+## What is Scoopy Doog?
+
+Scoopy Doog is a professional dog waste removal service for home yards in Orange County, California.
+
 ## Does the customer need to be home?
 
 No. The yard must be accessible.

@@ -156,12 +156,18 @@ class GeminiClient:
     def __init__(self, api_key=None):
         self._key = api_key or os.environ.get("GEMINI_API_KEY")
 
+    @staticmethod
+    def _supports_temperature(model):
+        """Sampling params are deprecated for Gemini 3.5+ (ignored today, an
+        error in future generations), so they are only sent to older models."""
+        match = re.search(r"gemini-(\d+)", model or "")
+        return not (match and int(match.group(1)) >= 3)
+
     def chat(self, messages, tools=None, model=None, timeout=30, temperature=0.2):
         system = "\n\n".join(m["content"] for m in messages if m["role"] == "system")
-        body = {
-            "contents": self._wire([m for m in messages if m["role"] != "system"]),
-            "generationConfig": {"temperature": temperature},
-        }
+        body = {"contents": self._wire([m for m in messages if m["role"] != "system"])}
+        if self._supports_temperature(model):
+            body["generationConfig"] = {"temperature": temperature}
         if system:
             body["systemInstruction"] = {"parts": [{"text": system}]}
         if tools:
@@ -263,9 +269,44 @@ GREETING = re.compile(
 
 class DemoClient:
     """Rule-based stand-in used when no API key is set. It is not a model: it
-    reads intent with regexes and answers from templates and retrieved text."""
+    reads intent with regexes and answers from templates and retrieved text.
+
+    Agent-aware: the system prompt names the agent (Parcelco Nova or Scoopy
+    Doog), and the stand-in answers for that agent only, with that agent's
+    tools. Parcelco behaviour is unchanged."""
 
     provider = "demo"
+
+    @staticmethod
+    def _agent(messages):
+        system = next(
+            (m["content"] for m in messages if m["role"] == "system"), ""
+        )
+        return "scoopy" if "Scoopy Doog" in system else "parcelco"
+
+    @staticmethod
+    def _greeting(agent):
+        if agent == "scoopy":
+            return (
+                "Hi, I'm the Scoopy Doog assistant. I can help with dog waste "
+                "removal, pricing, visits, and booking questions."
+            )
+        return (
+            "Hi, I'm Nova from Parcelco. I can help with orders, refunds and "
+            "delivery questions."
+        )
+
+    TICKET_INTENT = re.compile(
+        r"\b(call\s+me\s+back|callback|call\s+back|open\s+a\s+ticket|support\s+ticket)\b",
+        re.I,
+    )
+    SERVICE_AREA_INTENT = re.compile(
+        r"\b(cover|service area|do you (come to|serve|work in)|coverage)\b|\bserve\b",
+        re.I,
+    )
+    CITY_AFTER = re.compile(r"(?:cover|serve|in|at|to)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)")
+    ZIP = re.compile(r"\b(\d{5})\b")
+    ORDER_MENTION = re.compile(r"order\s*#?\s*(\d+)", re.I)
 
     def chat(self, messages, tools=None, model=None, timeout=None, temperature=0):
         user_text = next(
@@ -295,10 +336,7 @@ class DemoClient:
 
     def _first_step(self, messages, text, tool_names, model):
         if GREETING.match(text):
-            return self._reply(
-                "Hi, I'm Nova from Parcelco. I can help with orders, refunds and delivery questions.",
-                model,
-            )
+            return self._reply(self._greeting(self._agent(messages)), model)
         order = ORDER_REF.search(text)
         lowered = text.lower()
         if self._wants_refund(text) and "check_order_status" in tool_names:
@@ -308,20 +346,26 @@ class DemoClient:
                     model,
                 )
             return self._call("check_order_status", {"order_id": order.group(1)}, model)
-        if (
-            order
-            and "open_ticket" in tool_names
-            and re.search(r"\b(ticket|complain\w*)\b", lowered)
-        ):
-            return self._call(
-                "open_ticket",
-                {
-                    "order_id": order.group(1),
-                    "subject": f"Support for order {order.group(1)}",
-                    "description": text,
-                },
-                model,
-            )
+        if "open_ticket" in tool_names and self.TICKET_INTENT.search(lowered):
+            args = {"subject": text[:80], "description": text}
+            # An order number only counts when the customer names an order
+            # ("order #1002"). A bare digit run — a phone number, a zip —
+            # is not an order, and attaching it would fail the call.
+            # Scoopy has no order tool at all, so it never gets an order_id.
+            mentioned = self.ORDER_MENTION.search(text)
+            if mentioned and "check_order_status" in tool_names:
+                args["order_id"] = mentioned.group(1)
+                args["subject"] = f"Support for order {mentioned.group(1)}"
+            return self._call("open_ticket", args, model)
+        if "check_service_area" in tool_names and self.SERVICE_AREA_INTENT.search(lowered):
+            args = {}
+            city = self.CITY_AFTER.search(text)
+            if city:
+                args["city"] = city.group(1)
+            zip_match = self.ZIP.search(text)
+            if zip_match:
+                args["zip_code"] = zip_match.group(1)
+            return self._call("check_service_area", args, model)
         if order and "check_order_status" in tool_names:
             return self._call("check_order_status", {"order_id": order.group(1)}, model)
         return self._reply(self._grounded(messages[0]["content"], text), model)
@@ -370,6 +414,11 @@ class DemoClient:
     def _describe(name, data):
         if name == "open_ticket":
             return f"I opened support ticket #{data['ticket_id']} for you."
+        if name == "check_service_area":
+            reply = f"We serve {data['service_area']}."
+            if data.get("note"):
+                reply += f" {data['note']}"
+            return reply
         if name == "issue_refund":
             order, amount = data["order_id"], data["amount"]
             if data["status"] == "proposal":

@@ -26,3 +26,18 @@
 agents.40.160.149.104.nip.io {
 	reverse_proxy agent-platform:8000
 }
+
+# Agent 2 — Scoopy Doog (Nov 8, 2026). SAME container, SAME port: the
+# single process serves both agents and picks the agent from the request
+# Host header (agents.* -> parcelco, scoopy.* -> scoopy, anything else ->
+# parcelco). No second container exists — the 8 GB box cannot hold two
+# app processes at peak (see BUILD_BRIEF_SCOOPY.md). The Caddy container
+# is already on the agent-platform_default network from the Parcelco
+# route, so this block needs no new network connect — append, validate,
+# reload, same as before. The Parcelco container keeps serving through
+# the whole change: a bad Caddyfile breaks every site on the box, SLATE
+# included, so never reload a failed validation.
+
+scoopy.40.160.149.104.nip.io {
+	reverse_proxy agent-platform:8000
+}

@@ -22,11 +22,13 @@ from flask import (
 )
 from flask_wtf.csrf import CSRFProtect
 from itsdangerous import BadSignature, URLSafeTimedSerializer
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 import auth
 import cache
 import guardrails
 import llm
+import oauth
 import rag
 import router
 import store
@@ -36,6 +38,51 @@ log = logging.getLogger(__name__)
 
 ROOT = Path(__file__).parent
 PROMPTS_DIR = ROOT / "config" / "prompts"
+
+# One process serves every agent; the request Host header picks which one.
+# The model loads once, the agent switch is cheap (prompt + tools + corpus
+# partition per request). Anything not listed here is Parcelco, the default,
+# so existing behaviour is unchanged.
+AGENTS = ("parcelco", "scoopy")
+HOST_AGENTS = {"scoopy.40.160.149.104.nip.io": "scoopy"}
+AGENT_PROMPTS = {"parcelco": "parcelco.v1", "scoopy": "scoopy.v1"}
+# What the pages call each agent. The chat starters live in chat.html and
+# are picked by brand id, so a Scoopy customer never sees Parcelco copy.
+AGENT_BRANDS = {
+    "parcelco": {
+        "id": "parcelco",
+        "name": "Nova",
+        "title": "Parcelco Nova",
+        "line": "Parcelco",
+        "sub": "Nova support",
+        "chat_heading": "Ask Nova about your parcels",
+        "composer_label": "Message Nova",
+        "composer_placeholder": "Ask about an order, a refund or delivery",
+        "login_heading": "Log in to Nova",
+        "first_run_note": "This account gets six demo orders to try Nova with.",
+    },
+    "scoopy": {
+        "id": "scoopy",
+        "name": "Scoopy Doog",
+        "title": "Scoopy Doog support",
+        "line": "Scoopy Doog",
+        "sub": "support",
+        "chat_heading": "Ask Scoopy Doog about your yard",
+        "composer_label": "Message Scoopy Doog",
+        "composer_placeholder": "Ask about pricing, visits or booking",
+        "login_heading": "Log in to Scoopy Doog",
+        "first_run_note": None,
+    },
+}
+
+
+def resolve_agent(host):
+    """Host header -> agent id. Port stripped, case-insensitive, Parcelco
+    is the default for every host that is not the Scoopy host (including
+    localhost and direct-IP access), so the Parcelco deploy keeps working
+    exactly as before."""
+    name = (host or "").split(":")[0].strip().lower()
+    return HOST_AGENTS.get(name, "parcelco")
 UNAVAILABLE = "The assistant is unavailable right now. Please try again in a minute."
 OUT_OF_STEPS = "I couldn't finish that in the steps I'm allowed. Please try asking one thing at a time."
 MAX_MESSAGE_CHARS = 8000
@@ -139,7 +186,14 @@ def run_turn(
     routing = routing or router.load_routing()
     live = client_factory is not None or bool(llm.live_providers())
     factory = client_factory or llm.make_client
-    prompt_version = active["prompt_version"]
+    # The prompt follows the agent, not the startup config: an eval run
+    # passes its own config (active["agent"] == agent), while the Flask
+    # path loads the Parcelco default and the agent map supplies the rest.
+    prompt_version = (
+        active["prompt_version"]
+        if active.get("agent", "parcelco") == agent
+        else AGENT_PROMPTS.get(agent, active["prompt_version"])
+    )
     user_id = user["id"]
     trace = {
         "id": trace_id,
@@ -522,6 +576,11 @@ def create_app(db_path=None, client_factory=None, embedder=None, reranker=None):
     seed_accounts(db_path)
 
     app = Flask(__name__)
+    # Caddy terminates TLS and proxies over plain HTTP; trust its
+    # X-Forwarded-Proto/Host so url_for(_external=True) — used by the Google
+    # OAuth redirect — builds https URLs for the public host. With no proxy
+    # headers (local runs) this changes nothing.
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
     secret = os.environ.get("AGENT_SECRET")
     if not secret:
         secret = secrets.token_hex(32)
@@ -538,10 +597,16 @@ def create_app(db_path=None, client_factory=None, embedder=None, reranker=None):
     )
     CSRFProtect(app)
     signer = URLSafeTimedSerializer(secret, salt="refund-confirm")
-    agent = load_active()["agent"]
+    # The startup agent is the default (Parcelco) and the only agent with a
+    # refund-confirm flow; the chat path resolves the agent per request.
+    default_agent = load_active()["agent"]
+    google_oauth = oauth.build_oauth(app)
 
     active_embedder = embedder or rag.get_embedder()
-    rag.ensure_ingested(db_path, agent, ROOT / "data" / agent, active_embedder)
+    # One process serves both agents, so both corpora are ingested at
+    # startup. The model still loads once.
+    for name in AGENTS:
+        rag.ensure_ingested(db_path, name, ROOT / "data" / name, active_embedder)
 
     @app.after_request
     def security_headers(response):
@@ -558,12 +623,14 @@ def create_app(db_path=None, client_factory=None, embedder=None, reranker=None):
             "demo_label": llm.DEMO_LABEL if not llm.live_providers() else None,
             "is_staff": _is_staff(),
             "from_json": json.loads,
+            "brand": AGENT_BRANDS[resolve_agent(request.host)],
+            "google_oauth": google_oauth is not None,
         }
 
     @app.errorhandler(403)
     def forbidden(_error):
         return render_template(
-            "error.html", code=403, message="This page is for Parcelco staff."
+            "error.html", code=403, message="This page is for staff."
         ), 403
 
     @app.errorhandler(404)
@@ -577,7 +644,9 @@ def create_app(db_path=None, client_factory=None, embedder=None, reranker=None):
     @app.get("/healthz")
     def healthz():
         try:
-            ready = store.count_chunks(db_path, agent) > 0
+            ready = all(
+                store.count_chunks(db_path, name) > 0 for name in AGENTS
+            )
         except Exception:
             log.exception("health check failed")
             ready = False
@@ -631,6 +700,40 @@ def create_app(db_path=None, client_factory=None, embedder=None, reranker=None):
             "auth.html", mode="login", first_run=False, error=error
         ), 401 if error else 200
 
+    @app.get("/login/google")
+    def google_login():
+        """Start Google sign-in. Unconfigured (no OAuth client yet) it sends
+        the customer back to the password login instead of erroring."""
+        if google_oauth is None:
+            flash("Google sign-in is not set up yet. Use your password to log in.")
+            return redirect(url_for("login"))
+        return google_oauth.google.authorize_redirect(
+            url_for("google_callback", _external=True)
+        )
+
+    @app.get("/auth/google/callback")
+    def google_callback():
+        """Google's answer: exchange the code, map the verified identity to
+        a local account, sign in. Any failure lands back on the login page
+        with a plain message — never a traceback."""
+        if google_oauth is None:
+            return redirect(url_for("login"))
+        try:
+            token = google_oauth.google.authorize_access_token()
+            userinfo = token.get("userinfo") or google_oauth.google.userinfo(
+                token=token
+            )
+            user = oauth.find_or_create_user(db_path, userinfo)
+        except Exception:
+            log.exception("Google sign-in failed")
+            flash("Google sign-in didn't work. Try your password, or try again.")
+            return redirect(url_for("login"))
+        session.clear()
+        session.update(
+            user_id=user["id"], username=user["username"], role=user["role"]
+        )
+        return redirect(url_for("chat"))
+
     @app.post("/logout")
     def logout():
         session.clear()
@@ -664,7 +767,7 @@ def create_app(db_path=None, client_factory=None, embedder=None, reranker=None):
             session["chat_id"] = uuid.uuid4().hex
         turn = run_turn(
             db_path,
-            agent,
+            resolve_agent(request.host),
             {"id": session["user_id"], "role": session["role"]},
             text,
             session["chat_id"],
@@ -709,7 +812,7 @@ def create_app(db_path=None, client_factory=None, embedder=None, reranker=None):
                 "db_path": db_path,
                 "user_id": session["user_id"],
                 "trace_id": payload["trace"],
-                "agent": agent,
+                "agent": default_agent,
                 "role": session["role"],
                 "human_confirmed": True,
             },

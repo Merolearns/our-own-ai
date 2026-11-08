@@ -80,6 +80,43 @@ SECRET_PATTERNS = re.compile(
     r"-----BEGIN [A-Z ]*PRIVATE KEY-----",
     re.I,
 )
+# A card number is 13-19 digits that pass Luhn. Same shape as store.py's
+# redactor (CARD_RUN + _luhn_ok): order ids (4 digits), phone numbers
+# (10 digits) and money amounts never match the run.
+CARD_RUN = re.compile(r"\b(?:\d[ -]?){13,19}\b")
+
+
+def _luhn_ok(digits: str) -> bool:
+    total = 0
+    for index, char in enumerate(reversed(digits)):
+        number = int(char)
+        if index % 2 == 1:
+            number *= 2
+            if number > 9:
+                number -= 9
+        total += number
+    return total % 10 == 0
+
+
+def find_card_number(text: str):
+    """The first Luhn-valid card number in text, or None. Used by L4 and by
+    ingest screening so a pasted card is never echoed or stored as content."""
+    for match in CARD_RUN.finditer(text or ""):
+        digits = re.sub(r"[ -]", "", match.group(0))
+        if 13 <= len(digits) <= 19 and digits.isdigit() and _luhn_ok(digits):
+            return match.group(0)
+    return None
+
+
+def find_secret(text: str):
+    """Trigger name when text holds a secret-like value, else None. The one
+    place that decides what counts as a secret for both L4 and ingest."""
+    body = normalize(text)[0]
+    if SECRET_PATTERNS.search(body):
+        return "secret-pattern"
+    if find_card_number(body):
+        return "card-number"
+    return None
 RECOMMEND_WORDS = re.compile(
     r"\b(?:recommend\w*|suggest\w*|switch\w*|try|better|best|prefer\w*|go\s+with|choose)\b",
     re.I,
@@ -157,8 +194,9 @@ def validate_output(text: str, canary: str | None = None) -> dict:
     body = normalize(text)[0]
     if canary and canary in body:
         return _verdict(True, "canary-leak", "L4")
-    if SECRET_PATTERNS.search(body):
-        return _verdict(True, "secret-pattern", "L4")
+    trigger = find_secret(body)
+    if trigger:
+        return _verdict(True, trigger, "L4")
     for sentence in re.split(r"(?<=[.!?])\s+|\n+", body):
         lowered = sentence.lower()
         if (

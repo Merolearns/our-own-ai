@@ -34,7 +34,8 @@ CHARS_PER_TOKEN = 4
 MAX_CHARS = {"policy": 500 * CHARS_PER_TOKEN, "explanatory": 800 * CHARS_PER_TOKEN}
 OVERLAP = 0.12
 # Customer order data reaches the model through scoped tools, never through search.
-SKIP_DOCS = {"orders.md"}
+# README files are directory notes for the builders, not customer knowledge.
+SKIP_DOCS = {"orders.md", "README.md"}
 
 STOPWORDS = frozenset(
     """a about after all also am an and any are as at be been but by can could did do does
@@ -223,7 +224,21 @@ def _chunk_directory(docs_dir):
     return chunks
 
 
+def _screen_chunks(chunks):
+    """Secret screening at ingest (S3): a document holding a secret-like
+    value is never stored. Fails loudly — a bad doc must stop the ingest,
+    not slip into the corpus where retrieval could quote it."""
+    for chunk in chunks:
+        trigger = guardrails.find_secret(chunk["text"])
+        if trigger:
+            raise ValueError(
+                f"secret pattern ({trigger}) in {chunk['doc_id']}: "
+                "refusing to ingest"
+            )
+
+
 def _store_chunks(db_path, agent, chunks, embedder):
+    _screen_chunks(chunks)
     vectors = (
         embedder.embed([c["text"] for c in chunks]) if embedder and chunks else None
     )

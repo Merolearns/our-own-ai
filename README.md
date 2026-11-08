@@ -11,9 +11,12 @@ prompt or config change ships until the golden set is green.
    delivery company. Answers from real policy documents with citations,
    checks order status, issues refunds under a coded policy, opens tickets.
    This is the showcase and the LinkedIn video subject.
-2. **Scoopy Doog** (data ready, agent to come) — real dog waste removal
-   business in Orange County. Answers pricing and service questions, takes
-   booking requests. Facts in `data/scoopy/`.
+2. **Scoopy Doog** (built, demo) — real dog waste removal business in
+   Orange County. Answers pricing and service questions from verified
+   site facts only, takes callback / quote requests as tickets. Live at
+   `scoopy.40.160.149.104.nip.io` once the Caddy block lands (same
+   container as Parcelco — host routing, not a second deploy). Facts in
+   `data/scoopy/`; Google OAuth sign-in is a parent step after deploy.
 3. **Sales machine** (data ready, agent to come) — lead qualification for
    Merolearns Studio. Shows demo sites, books intro calls. Facts in
    `data/sales/`. Business identity only, never a personal name or address.

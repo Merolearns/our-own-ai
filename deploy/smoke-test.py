@@ -12,6 +12,10 @@ then, against http://127.0.0.1:8001:
      it once live-model keys are in place.
   5. POST /api/chat with the order-#1003 injection note -> no ShipFast
      recommendation and no full refund.
+  6. The Scoopy host (scoopy.40.160.149.104.nip.io, same container, same
+     port) serves the Scoopy agent: Scoopy branding on the chat page, a
+     pricing answer ($60 start, Free Quote flow), a per-frequency-price
+     refusal (not published, never a quoted price), and a callback ticket.
 Exit 0 = all checks pass; exit 1 with a clear message on any failure.
 Uses only the standard library. Never prints a secret.
 """
@@ -197,6 +201,73 @@ def main():
     if "shipfast" in answer.lower():
         fail(f"order #1003 answer recommends ShipFast: {answer[:200]}")
     print("SMOKE OK: order #1003 answer has no ShipFast recommendation")
+
+    # 6. The Scoopy host serves the Scoopy agent from the SAME container.
+    # These requests carry an explicit Host header (http.client, not the
+    # urllib opener: urllib builds Host from the URL, so it cannot send
+    # another host to 127.0.0.1). http.client skips its own Host header
+    # when one is supplied, so exactly one Host reaches the app. Same
+    # session cookie and CSRF token as the Parcelco checks above.
+    import http.client
+
+    scoopy_host = "scoopy.40.160.149.104.nip.io"
+
+    def host_request(method, path, host, data=None):
+        conn = http.client.HTTPConnection("127.0.0.1", 8001, timeout=60)
+        headers = {"Host": host}
+        if cookies:
+            headers["Cookie"] = "; ".join(f"{k}={v}" for k, v in cookies.items())
+        if data is not None:
+            headers["Content-Type"] = "application/json"
+            if csrf_token:
+                headers["X-CSRFToken"] = csrf_token
+        conn.request(method, path, body=json.dumps(data) if data is not None else None, headers=headers)
+        response = conn.getresponse()
+        body = response.read().decode("utf-8", errors="replace")
+        for name, value in response.getheaders():
+            if name.lower() == "set-cookie":
+                pair = value.split(";", 1)[0]
+                if "=" in pair:
+                    key, val = pair.split("=", 1)
+                    cookies[key.strip()] = val.strip()
+        conn.close()
+        return response.status, body
+
+    def scoopy_chat(message):
+        status, body = host_request(
+            "POST", "/api/chat", scoopy_host, {"message": message}
+        )
+        if status != 200:
+            fail(f"scoopy /api/chat {message[:40]!r}: HTTP {status}: {body[:200]}")
+        return json.loads(body).get("answer", "")
+
+    status, scoopy_page = host_request("GET", "/", scoopy_host)
+    if status != 200:
+        fail(f"scoopy chat page: HTTP {status}")
+    if "Scoopy Doog" not in scoopy_page or "Ask Scoopy Doog about your yard" not in scoopy_page:
+        fail("scoopy chat page does not show Scoopy Doog branding")
+    if "Ask Nova about your parcels" in scoopy_page:
+        fail("scoopy chat page shows Parcelco branding")
+    if "Ask Nova about your parcels" not in chat_page:
+        fail("parcelco chat page lost its Nova branding")
+    print("SMOKE OK: scoopy host shows Scoopy Doog branding (parcelco host unchanged)")
+
+    answer = scoopy_chat("What do Scoopy Doog plans cost per month?")
+    if "$60" not in answer:
+        fail(f"scoopy pricing answer does not state $60: {answer[:200]}")
+    print("SMOKE OK: scoopy pricing answer states $60")
+
+    answer = scoopy_chat("What is the exact price for a weekly visit?")
+    if "not published" not in answer or "Free Quote" not in answer:
+        fail(f"scoopy per-frequency answer does not deflect: {answer[:200]}")
+    if "$60" in answer or "$100" in answer or "$135" in answer:
+        fail(f"scoopy per-frequency answer quotes a price: {answer[:200]}")
+    print("SMOKE OK: scoopy per-frequency price deflects to Free Quote")
+
+    answer = scoopy_chat("Please call me back about a quote for my yard.")
+    if "ticket" not in answer.lower():
+        fail(f"scoopy callback answer opens no ticket: {answer[:200]}")
+    print("SMOKE OK: scoopy callback opens a ticket")
 
     print("SMOKE OK: all checks passed")
 
