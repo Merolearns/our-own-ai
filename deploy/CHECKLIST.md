@@ -1,0 +1,83 @@
+# deploy/CHECKLIST.md — first live deploy (parent steps + what happens when)
+
+Status: the code is ready; the deploy is blocked on TWO parent-side actions
+in the browser (neither can be done from this VM — both tokens return 403).
+Everything below is written; nothing is guessed.
+
+## 1. Parent action A — land the workflow files (browser, GitHub web UI)
+The vault PAT and the gh CLI PAT both lack the **Workflows** permission, so
+no workflow file can be pushed by API or git (verified Nov 8, 2026: a tree
+containing any `.github/workflows/` path is refused with 403, while a tree
+without one succeeds with 201). Add these three files in the repo web UI
+("Add file" -> "Create new file", one commit on main):
+- `.github/workflows/ci.yml` — pytest + ruff 0.16.10 on PRs and pushes to main.
+- `.github/workflows/measure-vps.yml` — read-only host measurement via the
+  `slate-vps` runner (proves whether that runner is visible to this repo).
+- `.github/workflows/deploy.yml` — the deploy (manual trigger only).
+
+Alternative: grant the **Workflows** permission to the "Muse GitHub Access"
+PAT (repo settings -> the token's fine-grained permissions) and the files
+can be pushed normally from here afterwards.
+
+## 2. Parent action B — set three repo secrets (browser, repo Settings -> Secrets)
+- `VPS_SSH_KEY` — the SSH private key for root@40.160.149.104 (the SLATE
+  deploy key, `~/.ssh/id_slate_deploy` on the dev VM; the value never leaves
+  the browser form / GitHub secrets).
+- `DEMO_CUSTOMER_PASSWORD` — password for the `demo` login (pick any
+  12+ character password; this is the login the LinkedIn video will show).
+- `DEMO_STAFF_PASSWORD` — password for the `staff` login (different value).
+
+The deploy workflow fails loudly if any of these is missing — it never
+deploys without logins. `AGENT_SECRET` (sessions) is generated on first
+install by the deploy script and persisted in the VPS .env; it is not a
+repo secret and is never printed.
+
+## 3. Trigger the deploy (browser, Actions tab -> deploy -> Run workflow)
+The workflow runs, in order: SSH setup -> repo sync at the exact SHA ->
+.env written from secrets (mode 600, never printed) -> compose copied ->
+`deploy-remote.sh` on the VPS: RAM gate (>= 3.5 GB free or abort with
+numbers), build on the VPS, up -d, /healthz poll up to 10 min (first boot
+downloads ~2.3 GB of models), end-to-end smoke (login + refund-policy
+question: $50 with sources, demo banner, no ShipFast), backup cron
+installed, disk guard (>= 5 GB free or abort). Any failure aborts the run
+with the numbers in the log.
+
+## 4. One-time Caddy route (parent / SLATE side chat, vps-ops)
+Append `deploy/caddy-snippet` (host `agents.40.160.149.104.nip.io`,
+reverse-proxy to localhost:8000) to the VPS Caddyfile BELOW SLATE's blocks,
+then `caddy validate` and only reload if validation exits 0. A bad Caddyfile
+takes SLATE down too — never reload a file that failed validation. Until
+the route exists the app is verified over SSH only, not via a public URL.
+After the route is live: screenshot the chat page as `images/13-live-deploy.png`
+(headless Chromium, same as Builder A's 01-12).
+
+## 5. After the first deploy — live-model keys (parent, when ready)
+The first deploy runs in DEMO MODE (no LLM keys): the app answers from its
+rule-based demo client and shows the "demo mode — no live model" banner.
+To go live-model, set the repo secrets `DEEPSEEK_API_KEY` and
+`GEMINI_API_KEY` (both already in the vault; the values never enter chat or
+the repo), then re-run the deploy workflow — it rewrites the .env and
+restarts the container. Verify afterwards: the banner disappears and the
+eval gate still passes (`python -m tools.eval_run --agent parcelco`).
+
+## 6. Backups — status
+`deploy/backup.sh` (nightly 03:30 UTC cron, installed by the deploy) backs
+up the SQLite DB only — the chunks table lives in the same DB file, and the
+model cache under /data/models is re-downloadable, so there is no separate
+vector-store step. The snapshot + integrity-check + restore procedure was
+verified locally (see reviews/REVIEW.md). The R2 upload leg needs the repo
+secrets `BACKUP_R2_ENDPOINT`, `BACKUP_R2_BUCKET`, `BACKUP_R2_ACCESS_KEY_ID`,
+`BACKUP_R2_SECRET_ACCESS_KEY` (SLATE already uses R2; a second bucket on the
+same account works). Until those secrets exist, the cron fails loudly in
+its log (exit non-zero, never a silent fake backup) — set them before real
+users touch the app.
+
+## 7. What is already verified (firsthand, Nov 8, 2026)
+- Full suite: 298 passed, 1 skipped (A10 rate limiting, not built in v1).
+- Eval gate: 25/25, pass rate 1.0, demo mode.
+- A11: a pasted API key and a Luhn-valid test card appear nowhere in the
+  SQLite file (probe over every table); stored trace shows `[REDACTED]`.
+- Gemini Flash-Lite model ID `gemini-3.5-flash-lite` verified from Google's
+  own docs (GA Jul 21, 2026; retirement Jul 21, 2027 or later).
+- Remote main: `ccf468be` (A11 fix + CI + measure workflow, minus the three
+  workflow files that cannot be pushed — see action A above).

@@ -1,0 +1,68 @@
+# Agent platform — own Compose project on the shared OVH VPS (SLATE box).
+# Lives on the VPS at /srv/agent-platform/docker-compose.yml. This copy in the
+# repo is the source of truth; the deploy workflow copies it over via SSH.
+#
+# Isolation from SLATE (research/05 §1): own project, own container, own
+# named volume, hard memory/CPU limits. Never share SLATE's Redis/MinIO/
+# Postgres; the platform keeps its own SQLite file under /data.
+#
+# Image: built ON THE VPS at deploy time from the repo checkout
+# (/srv/agent-platform/repo) — deliberately NOT built in GitHub Actions:
+# the Actions budget is nearly exhausted ($20.04 of $25 used Nov 8) and the
+# VPS build costs $0 marginal. The deploy workflow runs `docker compose
+# build` on the box, then `up -d`. `image: agent-platform:local` is the
+# local tag the build produces; never push it anywhere.
+#
+# Memory: the app needs ~2.5 GB RSS with BGE-M3 + reranker loaded (measured
+# Nov 8, Builder A smoke server). mem_limit 3g is the measured need plus
+# headroom — it is ENFORCED, not guessed: deploy/deploy-remote.sh measures
+# free RAM on the box first and refuses to start the container unless at
+# least 3.5 GB is free (app 2.5 + 1.0 headroom for SLATE), printing the
+# numbers. If the box cannot spare it, the deploy aborts and the numbers
+# go in the report — do not lower the limit to force it.
+#
+# Secrets: NEVER in this file or the repo. LLM keys (DEEPSEEK_API_KEY,
+# GEMINI_API_KEY) and backup R2 credentials live in /srv/agent-platform/.env
+# on the VPS, written there at deploy time from GitHub Actions secrets.
+# Demo mode (no LLM keys) is the first deploy; keys are added later by the
+# parent, see deploy/CHECKLIST.md.
+
+name: agent-platform
+
+services:
+  agent-platform:
+    # VPS-side build (see header). The context path is VPS-absolute: this
+    # file only ever runs on the VPS. Local dev runs Flask directly or
+    # `docker build .` from the repo root, never this compose file.
+    build:
+      context: /srv/agent-platform/repo
+      dockerfile: Dockerfile
+    image: agent-platform:local
+    container_name: agent-platform
+    restart: unless-stopped
+    # Gunicorn serves on :8000 inside the container (see Dockerfile).
+    # Bound to loopback only: the outside world reaches the app through the
+    # Caddy route in deploy/caddy-snippet, never directly.
+    ports:
+      - "127.0.0.1:8000:8000"
+    env_file:
+      - /srv/agent-platform/.env
+    volumes:
+      # All durable state (SQLite DB + fastembed model cache) lives here.
+      - agent-data:/data
+    # Hard limits so this app can never starve SLATE on the shared 8 GB box.
+    mem_limit: 3g
+    cpus: 1.0
+    healthcheck:
+      # /healthz = app up + SQLite readable + vector store present.
+      # Uses the in-image Python so no extra tooling is needed in the image.
+      # start_period 120s: first boot downloads ~2.3 GB of models into
+      # /data/models; the deploy script polls /healthz for up to 10 min.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz', timeout=5)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 120s
+
+volumes:
+  agent-data:

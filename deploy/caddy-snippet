@@ -1,0 +1,18 @@
+# Caddy route for the agent platform — APPEND to the VPS Caddyfile BELOW
+# SLATE's blocks. Keep it separate from SLATE's routes: a bad edit here must
+# never take SLATE down, and a SLATE edit must never take this app down.
+#
+# Host: agents.40.160.149.104.nip.io (free nip.io DNS, same as SLATE's
+# 40.160.149.104.nip.io host). Caddy auto-provisions the Let's Encrypt cert;
+# no domain purchase needed.
+#
+# BEFORE RELOADING, ALWAYS VALIDATE — a bad Caddyfile breaks every site on
+# the box, SLATE included:
+#   caddy validate --config /etc/caddy/Caddyfile
+#   systemctl reload caddy
+# Only reload after `caddy validate` exits 0. If validation fails, fix the
+# file and re-validate; never reload a file that failed validation.
+
+agents.40.160.149.104.nip.io {
+	reverse_proxy localhost:8000
+}
