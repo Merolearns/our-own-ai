@@ -1,0 +1,29 @@
+name: measure-vps
+
+# One-off read-only host measurement for the agent-platform deploy.
+# Runs on the SLATE self-hosted runner (label slate-vps) IF that runner is
+# registered at org level and visible to this repo. If the run sits queued
+# forever, the runner is repo-scoped to slate and this path is dead — use
+# the GitHub Actions -> VPS SSH path (deploy.yml) instead, which needs the
+# VPS_SSH_KEY repo secret.
+#
+# Nothing here writes anything: free/df/docker stats only. No secrets used.
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  measure:
+    runs-on: slate-vps
+    timeout-minutes: 5
+    steps:
+      - name: Host measurements (read-only)
+        run: |
+          echo "=== hostname ==="; hostname
+          echo "=== free (MB) ==="; free -m
+          echo "=== disk ==="; df -h / /srv
+          echo "=== docker stats ==="; docker stats --no-stream --format '{{.Name}} {{.MemUsage}} {{.CPUPerc}}' 2>&1 | head -20 || true
+          echo "=== uptime ==="; uptime

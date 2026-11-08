@@ -1,0 +1,51 @@
+name: ci
+
+# Fast deterministic checks on pull requests and pushes to main. No secrets:
+# tests use fake LLM clients, so nothing here needs DEEPSEEK_API_KEY /
+# GEMINI_API_KEY. A red build blocks the deploy workflow (deploy only runs
+# off green main).
+#
+# Ruff is pinned to 0.16.10 — the version the code was verified clean
+# against locally. No ruff config file exists in the repo; the binary's
+# defaults are the rule set, so the version pin is what keeps CI and
+# local identical. Do not bump the pin without re-running ruff locally.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install ruff==0.16.10
+
+      # Lint gate is F-only (pyflakes: unused imports, undefined names).
+      # The repo has no ruff config, and a plain `ruff check .` currently
+      # reports 33 pre-existing style findings (FURB167 re.I, PLE2515,
+      # RUF059, ISC004, UP012, SIM905, RUF100, PLE2502, I001, BLE001) in
+      # engine and test files — 27 auto-fixable, owned by Builder A (see
+      # reviews/REVIEW.md S5). The F-only gate is green today and catches
+      # real bugs; do not widen it until the style cleanup lands, or CI
+      # goes red on code this workflow did not touch.
+      - name: Lint (pyflakes rules only)
+        run: ruff check --select F .
+
+      - name: Run tests
+        run: python -m pytest -q

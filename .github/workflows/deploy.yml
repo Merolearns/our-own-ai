@@ -1,0 +1,119 @@
+name: deploy
+
+# Deploy the agent platform to the shared OVH VPS (SLATE box).
+# Manual trigger only (workflow_dispatch): the parent triggers it when the
+# box is ready. Nothing here runs on push — CI (ci.yml) is the push gate,
+# and a deploy off an untested commit is never automatic.
+#
+# Requires these repo secrets (parent sets them; the workflow fails loudly
+# if any required one is missing — never silently deploy without logins):
+#   VPS_SSH_KEY            SSH private key for root@40.160.149.104
+#   DEMO_CUSTOMER_PASSWORD password for the demo customer login
+#   DEMO_STAFF_PASSWORD    password for the staff login
+# Optional (demo mode if absent — the app runs with its demo client):
+#   DEEPSEEK_API_KEY, GEMINI_API_KEY
+#   BACKUP_R2_ENDPOINT, BACKUP_R2_BUCKET, BACKUP_R2_ACCESS_KEY_ID,
+#   BACKUP_R2_SECRET_ACCESS_KEY (nightly backups; see deploy/backup.sh)
+#
+# What it does, in order (each step fails the run loudly on error):
+#   1. SSH setup (same mechanism as SLATE's deploy-workers.yml).
+#   2. Sync the repo to /srv/agent-platform/repo at exactly $GITHUB_SHA.
+#   3. Write /srv/agent-platform/.env from secrets (mode 600, never
+#      printed); AGENT_SECRET is generated on first install by the remote
+#      script and persisted in the .env.
+#   4. Copy docker-compose.yml to /srv/agent-platform/.
+#   5. Run deploy/deploy-remote.sh on the VPS: RAM gate, build, up -d,
+#      /healthz poll (up to 10 min), end-to-end smoke, backup cron, disk
+#      guard. Any failure aborts the run with the numbers in the log.
+#
+# What it does NOT do: the Caddy route (agents.40.160.149.104.nip.io) is a
+# one-time manual append — see deploy/caddy-snippet and deploy/CHECKLIST.md.
+# Until the route exists, the app is verified over SSH only, not via a
+# public URL. Nothing in this workflow edits SLATE's files, routes, or env.
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check required secrets are set
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          DEMO_CUSTOMER_PASSWORD: ${{ secrets.DEMO_CUSTOMER_PASSWORD }}
+          DEMO_STAFF_PASSWORD: ${{ secrets.DEMO_STAFF_PASSWORD }}
+        run: |
+          missing=""
+          [ -n "$VPS_SSH_KEY" ] || missing="$missing VPS_SSH_KEY"
+          [ -n "$DEMO_CUSTOMER_PASSWORD" ] || missing="$missing DEMO_CUSTOMER_PASSWORD"
+          [ -n "$DEMO_STAFF_PASSWORD" ] || missing="$missing DEMO_STAFF_PASSWORD"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing required repo secrets:$missing — set them in the repo settings, then re-run. The deploy refuses to start without logins."
+            exit 1
+          fi
+          echo "required secrets present (values never printed)"
+
+      - name: Set up SSH
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          cat > ~/.ssh/config <<EOF
+          Host vps
+            HostName 40.160.149.104
+            User root
+            IdentityFile ~/.ssh/id_deploy
+            StrictHostKeyChecking accept-new
+            ConnectTimeout 20
+            ServerAliveInterval 30
+          EOF
+          ssh vps true && echo "ssh ok"
+
+      - name: Sync repo to the VPS at this SHA
+        run: |
+          ssh vps "if [ -d /srv/agent-platform/repo/.git ]; then git -C /srv/agent-platform/repo fetch -q origin && git -C /srv/agent-platform/repo checkout -q ${{ github.sha }}; else git clone -q https://github.com/Merolearns/our-own-ai.git /srv/agent-platform/repo && git -C /srv/agent-platform/repo checkout -q ${{ github.sha }}; fi"
+          ssh vps "git -C /srv/agent-platform/repo rev-parse HEAD"
+
+      - name: Write the VPS .env from secrets (mode 600, never printed)
+        env:
+          DEMO_CUSTOMER_PASSWORD: ${{ secrets.DEMO_CUSTOMER_PASSWORD }}
+          DEMO_STAFF_PASSWORD: ${{ secrets.DEMO_STAFF_PASSWORD }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          BACKUP_R2_ENDPOINT: ${{ secrets.BACKUP_R2_ENDPOINT }}
+          BACKUP_R2_BUCKET: ${{ secrets.BACKUP_R2_BUCKET }}
+          BACKUP_R2_ACCESS_KEY_ID: ${{ secrets.BACKUP_R2_ACCESS_KEY_ID }}
+          BACKUP_R2_SECRET_ACCESS_KEY: ${{ secrets.BACKUP_R2_SECRET_ACCESS_KEY }}
+        run: |
+          umask 077
+          {
+            echo "DEMO_CUSTOMER_PASSWORD=$DEMO_CUSTOMER_PASSWORD"
+            echo "DEMO_STAFF_PASSWORD=$DEMO_STAFF_PASSWORD"
+            [ -n "$DEEPSEEK_API_KEY" ] && echo "DEEPSEEK_API_KEY=$DEEPSEEK_API_KEY"
+            [ -n "$GEMINI_API_KEY" ] && echo "GEMINI_API_KEY=$GEMINI_API_KEY"
+            [ -n "$BACKUP_R2_ENDPOINT" ] && echo "BACKUP_R2_ENDPOINT=$BACKUP_R2_ENDPOINT"
+            [ -n "$BACKUP_R2_BUCKET" ] && echo "BACKUP_R2_BUCKET=$BACKUP_R2_BUCKET"
+            [ -n "$BACKUP_R2_ACCESS_KEY_ID" ] && echo "BACKUP_R2_ACCESS_KEY_ID=$BACKUP_R2_ACCESS_KEY_ID"
+            [ -n "$BACKUP_R2_SECRET_ACCESS_KEY" ] && echo "BACKUP_R2_SECRET_ACCESS_KEY=$BACKUP_R2_SECRET_ACCESS_KEY"
+            echo "AGENT_DB=/data/agent.db"
+            echo "FASTEMBED_CACHE_PATH=/data/models"
+            echo "SESSION_COOKIE_SECURE=1"
+          } > .env.deploy
+          chmod 600 .env.deploy
+          scp -q .env.deploy vps:/srv/agent-platform/.env
+          rm -f .env.deploy
+          ssh vps "chmod 600 /srv/agent-platform/.env && ls -l /srv/agent-platform/.env"
+
+      - name: Copy compose file, run the VPS deploy script
+        run: |
+          scp -q deploy/docker-compose.yml vps:/srv/agent-platform/docker-compose.yml
+          ssh vps "bash /srv/agent-platform/repo/deploy/deploy-remote.sh ${{ github.sha }}"
