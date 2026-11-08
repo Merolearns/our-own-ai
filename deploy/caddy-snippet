@@ -14,5 +14,5 @@
 # file and re-validate; never reload a file that failed validation.
 
 agents.40.160.149.104.nip.io {
-	reverse_proxy localhost:8000
+	reverse_proxy localhost:8001
 }

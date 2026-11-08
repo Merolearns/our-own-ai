@@ -70,13 +70,24 @@ chmod 600 "$ENV_FILE"
 log "building image on the VPS (pip install; models download at first boot, not here)"
 docker compose -f "$COMPOSE_FILE" build
 log "starting container"
+# --- 2b. Host port must be free (SLATE's API owns 127.0.0.1:8000) -----------
+if command -v ss >/dev/null; then
+  if ss -ltn 2>/dev/null | grep -q '127.0.0.1:8001'; then
+    log "ERROR: 127.0.0.1:8001 is already in use:"
+    ss -ltnp 2>/dev/null | grep '8001' || true
+    exit 1
+  fi
+  log "host port 127.0.0.1:8001 is free"
+else
+  log "WARNING: ss not found, skipping host-port check"
+fi
 docker compose -f "$COMPOSE_FILE" up -d --remove-orphans
 
 # --- 3. Health poll (up to 10 min; first boot downloads the models) ---------
 log "polling /healthz (up to 10 min)"
 HEALTH_OK=0
 for i in $(seq 1 120); do
-  if curl -fsS -m 5 http://127.0.0.1:8000/healthz >/dev/null 2>&1; then
+  if curl -fsS -m 5 http://127.0.0.1:8001/healthz >/dev/null 2>&1; then
     HEALTH_OK=1
     log "healthz ok after ~$((i * 5))s"
     break
@@ -111,4 +122,4 @@ if [ "$FREE_GB" -lt 5 ]; then
   exit 1
 fi
 
-log "deploy ok: $ACTUAL_SHA live on localhost:8000 (public URL needs the Caddy route — see deploy/CHECKLIST.md)"
+log "deploy ok: $ACTUAL_SHA live on localhost:8001 (public URL needs the Caddy route — see deploy/CHECKLIST.md)"

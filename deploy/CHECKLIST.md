@@ -15,9 +15,14 @@ without one succeeds with 201). Add these three files in the repo web UI
   `slate-vps` runner (proves whether that runner is visible to this repo).
 - `.github/workflows/deploy.yml` — the deploy (manual trigger only).
 
-Alternative: grant the **Workflows** permission to the "Muse GitHub Access"
-PAT (repo settings -> the token's fine-grained permissions) and the files
-can be pushed normally from here afterwards.
+Alternative (TRIED Nov 8, 2026 — did NOT fix the API route): the
+"Muse GitHub Access" PAT was opened in the UI and already showed Actions
+Read and write; it was saved ("Your personal access token has been
+updated") — but the contents API still returns 403
+("Resource not accessible by personal access token") on all three
+workflow paths. The web-UI upload above is the working path; do not
+re-fight the API route. (Also note: the token edit needed a sudo-mode
+email code to meroatschool@gmail.com — the protected-lookup flow.)
 
 ## 2. Parent action B — set three repo secrets (browser, repo Settings -> Secrets)
 - `VPS_SSH_KEY` — the SSH private key for root@40.160.149.104 (the SLATE
@@ -44,7 +49,7 @@ with the numbers in the log.
 
 ## 4. One-time Caddy route (parent / SLATE side chat, vps-ops)
 Append `deploy/caddy-snippet` (host `agents.40.160.149.104.nip.io`,
-reverse-proxy to localhost:8000) to the VPS Caddyfile BELOW SLATE's blocks,
+reverse-proxy to localhost:8001) to the VPS Caddyfile BELOW SLATE's blocks,
 then `caddy validate` and only reload if validation exits 0. A bad Caddyfile
 takes SLATE down too — never reload a file that failed validation. Until
 the route exists the app is verified over SSH only, not via a public URL.

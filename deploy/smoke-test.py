@@ -2,7 +2,7 @@
 """End-to-end smoke test for the agent platform, run ON the VPS after deploy.
 
 Reads the demo password from /srv/agent-platform/.env (never printed),
-then, against http://127.0.0.1:8000:
+then, against http://127.0.0.1:8001:
   1. /healthz returns 200.
   2. Login as `demo` works (CSRF token from the login page, session cookie).
   3. POST /api/chat "What is the maximum refund?" (with the X-CSRFToken
@@ -26,8 +26,8 @@ import urllib.parse
 import urllib.request
 
 # Overridable for local testing: AGENT_SMOKE_BASE / AGENT_SMOKE_ENV.
-# On the VPS the defaults apply (localhost:8000, /srv/agent-platform/.env).
-BASE = os.environ.get("AGENT_SMOKE_BASE", "http://127.0.0.1:8000")
+# On the VPS the defaults apply (localhost:8001, /srv/agent-platform/.env).
+BASE = os.environ.get("AGENT_SMOKE_BASE", "http://127.0.0.1:8001")
 ENV_FILE = os.environ.get("AGENT_SMOKE_ENV", "/srv/agent-platform/.env")
 
 

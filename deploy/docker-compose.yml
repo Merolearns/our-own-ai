@@ -41,10 +41,12 @@ services:
     container_name: agent-platform
     restart: unless-stopped
     # Gunicorn serves on :8000 inside the container (see Dockerfile).
-    # Bound to loopback only: the outside world reaches the app through the
-    # Caddy route in deploy/caddy-snippet, never directly.
+    # Host port is 8001: SLATE's API already owns 127.0.0.1:8000 on this
+    # box (deploy run 1 failed on the bind). Bound to loopback only: the
+    # outside world reaches the app through the Caddy route in
+    # deploy/caddy-snippet, never directly.
     ports:
-      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:8001:8000"
     env_file:
       - /srv/agent-platform/.env
     volumes:
