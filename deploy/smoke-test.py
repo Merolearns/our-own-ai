@@ -16,7 +16,6 @@ Exit 0 = all checks pass; exit 1 with a clear message on any failure.
 Uses only the standard library. Never prints a secret.
 """
 
-import http.cookiejar
 import json
 import os
 import re
@@ -54,13 +53,44 @@ def main():
     if not password:
         fail("DEMO_CUSTOMER_PASSWORD not set in the VPS .env")
 
-    jar = http.cookiejar.CookieJar()
-    opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
+    # Cookies are carried manually, not via http.cookiejar: the app sets
+    # SESSION_COOKIE_SECURE=1 (correct behind the HTTPS Caddy route), and
+    # cookiejar refuses to send a Secure cookie over plain HTTP — so the
+    # session never reached the login POST and Flask-WTF rejected it 400
+    # (deploy run 2). This test talks to the app over loopback only, where
+    # carrying the cookie explicitly is safe. Do NOT "fix" this by dropping
+    # the Secure flag from the app: real users arrive via HTTPS.
+    # Redirects are not followed: NoRedirect returns None from
+    # redirect_request, so a 302 surfaces as an HTTPError whose headers
+    # carry the Set-Cookie (the logged-in session after login). post()'s
+    # except branch captures it. Without this, urllib would follow the
+    # redirect without a session cookie and loop back to /login.
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):
+            return None
+
+    opener = urllib.request.build_opener(NoRedirect())
+    cookies = {}
     csrf_token = None  # from the chat page <meta name="csrf-token">, after login
+
+    def store_cookies(response):
+        for header in response.headers.get_all("Set-Cookie") or []:
+            pair = header.split(";", 1)[0]
+            if "=" in pair:
+                name, value = pair.split("=", 1)
+                cookies[name.strip()] = value.strip()
+
+    def with_cookies(request):
+        if cookies:
+            request.add_header(
+                "Cookie", "; ".join(f"{k}={v}" for k, v in cookies.items())
+            )
+        return request
 
     def get(path, expect=200):
         try:
-            with opener.open(BASE + path, timeout=30) as response:
+            with opener.open(with_cookies(urllib.request.Request(BASE + path)), timeout=30) as response:
+                store_cookies(response)
                 body = response.read().decode("utf-8", errors="replace")
                 if response.status != expect:
                     fail(f"GET {path}: HTTP {response.status}, expected {expect}")
@@ -80,9 +110,14 @@ def main():
         for key, value in (headers or {}).items():
             request.add_header(key, value)
         try:
-            with opener.open(request, timeout=60) as response:
+            with opener.open(with_cookies(request), timeout=60) as response:
+                store_cookies(response)
                 return response.status, response.read().decode("utf-8", errors="replace")
         except urllib.error.HTTPError as exc:
+            # A 302 (e.g. login success) surfaces here as an HTTPError:
+            # the exception carries the 302's headers, including the
+            # logged-in session cookie. Capture it before returning.
+            store_cookies(exc)
             return exc.code, exc.read().decode("utf-8", errors="replace")
 
     # 1. Health.
