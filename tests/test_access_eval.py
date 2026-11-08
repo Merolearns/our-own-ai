@@ -225,12 +225,6 @@ def test_a11_pasted_key_never_repeated(engine):
     assert key not in result["answer"]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="v1 stores the raw input text in traces.input_text; redaction at "
-    "the write site is an engine gap, not a test gap. Fix the engine and "
-    "this test starts passing (strict xfail will then flag it).",
-)
 def test_a11_trace_stores_no_raw_key(engine):
     """The trace row for a turn must not hold the raw key."""
     db, user_id = engine

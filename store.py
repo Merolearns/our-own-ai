@@ -264,8 +264,71 @@ SEED_ORDERS = [
     ),
 ]
 
-SECRET_KEYS = re.compile(r"pass(word)?|token|secret|api[_-]?key|authorization", re.I)
+SECRET_KEYS = re.compile(r"pass(word)?|token|secret|api[_-]?key|authorization", re.IGNORECASE)
 TOOL_RESULT_CAP = 4000
+
+
+# --- Redaction at the write site (research/03 §9) ---------------------------
+# Every free-text string is scrubbed of secret-looking values BEFORE it
+# reaches SQLite. A secret that reaches the trace store is copied into
+# indexes, backups, and exports; scrubbing later is a project. The A11
+# eval case (tests/test_access_eval.py) proves it: a pasted API key must
+# appear nowhere in the database, only as [REDACTED].
+REDACT_VALUE_PATTERNS = [
+    re.compile(r"sk-[A-Za-z0-9]{16,}", re.IGNORECASE),
+    re.compile(r"sk-ant-[A-Za-z0-9-]{10,}", re.IGNORECASE),
+    re.compile(r"AKIA[0-9A-Z]{16}"),
+    re.compile(r"ghp_[A-Za-z0-9]{20,}", re.IGNORECASE),
+    re.compile(r"xox[baprs]-[A-Za-z0-9-]{10,}", re.IGNORECASE),
+    re.compile(r"AIza[0-9A-Za-z_-]{30,}"),
+    re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----", re.IGNORECASE),
+]
+# Key-name assignment: password=..., api_key: "...", token=... — the value
+# after the name is replaced, the name itself is kept so the field stays
+# readable in the trace.
+REDACT_NAMED_PATTERN = re.compile(
+    r"(\b(?:api[_-]?key|apikey|authorization|bearer|token|password|passwd"
+    r"|secret|client_secret|access_token|refresh_token|cookie|sessionid)"
+    r"\b\s*[:=]\s*)\S+",
+    re.IGNORECASE,
+)
+CARD_RUN = re.compile(r"\b(?:\d[ -]?){13,19}\b")
+
+
+def _luhn_ok(digits: str) -> bool:
+    total = 0
+    for index, char in enumerate(reversed(digits)):
+        number = int(char)
+        if index % 2 == 1:
+            number *= 2
+            if number > 9:
+                number -= 9
+        total += number
+    return total % 10 == 0
+
+
+def _redact_cards(text: str) -> str:
+    def replace(match):
+        digits = re.sub(r"[ -]", "", match.group(0))
+        if 13 <= len(digits) <= 19 and digits.isdigit() and _luhn_ok(digits):
+            return "[REDACTED]"
+        return match.group(0)
+
+    return CARD_RUN.sub(replace, text)
+
+
+def _redact_text(value):
+    """Scrub secret-looking values from a free-text string. Non-strings
+    pass through unchanged. Deliberately conservative: order ids (4 digits)
+    and money amounts (decimals) never match the card run, and the value
+    patterns only match known secret shapes."""
+    if not isinstance(value, str):
+        return value
+    redacted = value
+    for pattern in REDACT_VALUE_PATTERNS:
+        redacted = pattern.sub("[REDACTED]", redacted)
+    redacted = REDACT_NAMED_PATTERN.sub(r"\1[REDACTED]", redacted)
+    return _redact_cards(redacted)
 
 
 def _utc_now() -> str:
@@ -420,6 +483,10 @@ def log_trace(db_path, trace) -> None:
             "fallback_used", "demo", "total_tokens", "total_cost_usd", "total_latency_ms",
         ):  # fmt: skip
             values[index] = 0
+    # A11: secrets are scrubbed at the write site, never stored raw.
+    for column in ("input_text", "system_prompt", "final_answer", "error"):
+        index = columns.index(column)
+        values[index] = _redact_text(values[index])
     with _connect(db_path) as conn:
         conn.execute(
             f"INSERT INTO traces ({', '.join(columns)}, created_at)"
@@ -447,8 +514,8 @@ def log_llm_call(db_path, trace_id, step, call) -> None:
                 call.get("cost_usd"),
                 call.get("finish_reason"),
                 call.get("error"),
-                call.get("request_json"),
-                call.get("response_text"),
+                _redact_text(call.get("request_json")),
+                _redact_text(call.get("response_text")),
                 _utc_now(),
             ),
         )
@@ -462,6 +529,8 @@ def _redact(value):
         }
     if isinstance(value, list):
         return [_redact(item) for item in value]
+    if isinstance(value, str):
+        return _redact_text(value)
     return value
 
 
@@ -479,7 +548,7 @@ def log_tool_call(
                 trace_id,
                 name,
                 json.dumps(_redact(args), default=str),
-                text[:TOOL_RESULT_CAP],
+                _redact_text(text)[:TOOL_RESULT_CAP],
                 int(truncated),
                 int(side_effect),
                 latency_ms,
@@ -584,10 +653,10 @@ def cache_insert(db_path, entry) -> int:
             (
                 entry["agent_id"],
                 entry["partition_key"],
-                entry["query_text"],
+                _redact_text(entry["query_text"]),
                 entry["query_hash"],
                 entry.get("embedding"),
-                entry["answer_text"],
+                _redact_text(entry["answer_text"]),
                 entry.get("sources_json", "[]"),
                 entry["ttl_seconds"],
                 now.isoformat(timespec="microseconds"),
@@ -692,7 +761,7 @@ def log_feedback(db_path, trace_id, rating, note=None) -> int:
     with _connect(db_path) as conn:
         cur = conn.execute(
             "INSERT INTO feedback (trace_id, rating, note, created_at) VALUES (?, ?, ?, ?)",
-            (trace_id, rating, note, _utc_now()),
+            (trace_id, rating, _redact_text(note), _utc_now()),
         )
         return cur.lastrowid
 
@@ -712,8 +781,8 @@ def log_guardrail_event(
                 user_id,
                 layer,
                 decision,
-                trigger,
-                json.dumps(detail or {}, default=str),
+                _redact_text(trigger),
+                _redact_text(json.dumps(_redact(detail or {}), default=str)),
             ),
         )
 
@@ -832,7 +901,7 @@ def create_ticket(db_path, user_id, order_id, subject, description, priority) ->
         cur = conn.execute(
             "INSERT INTO tickets (user_id, order_id, subject, description, priority, created_at)"
             " VALUES (?, ?, ?, ?, ?, ?)",
-            (user_id, order_id, subject, description, priority, _utc_now()),
+            (user_id, order_id, _redact_text(subject), _redact_text(description), priority, _utc_now()),
         )
         return cur.lastrowid
 
@@ -851,7 +920,7 @@ def create_booking(db_path, user_id, agent_id, kind, details) -> int:
         cur = conn.execute(
             "INSERT INTO bookings (user_id, agent_id, kind, details_json, created_at)"
             " VALUES (?, ?, ?, ?, ?)",
-            (user_id, agent_id, kind, json.dumps(details), _utc_now()),
+            (user_id, agent_id, kind, json.dumps(_redact(details)), _utc_now()),
         )
         return cur.lastrowid
 
@@ -877,13 +946,13 @@ def create_approval(
                 (
                     agent,
                     tool,
-                    json.dumps(args, sort_keys=True),
+                    json.dumps(_redact(args), sort_keys=True),
                     args_hash(args),
                     idempotency_key,
                     requester,
-                    request_text,
-                    json.dumps(policy_checks),
-                    judge_verdict,
+                    _redact_text(request_text),
+                    json.dumps(_redact(policy_checks)),
+                    _redact_text(judge_verdict),
                     trace_id,
                     expires_at,
                     _utc_now(),
