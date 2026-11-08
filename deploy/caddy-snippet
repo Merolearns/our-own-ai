@@ -6,13 +6,23 @@
 # 40.160.149.104.nip.io host). Caddy auto-provisions the Let's Encrypt cert;
 # no domain purchase needed.
 #
-# BEFORE RELOADING, ALWAYS VALIDATE — a bad Caddyfile breaks every site on
-# the box, SLATE included:
-#   caddy validate --config /etc/caddy/Caddyfile
-#   systemctl reload caddy
-# Only reload after `caddy validate` exits 0. If validation fails, fix the
-# file and re-validate; never reload a file that failed validation.
+# LIVE Nov 8, 2026 (run 6 + SLATE chat): Caddy runs as Docker container
+# `slate-caddy`, NOT a host service — there is no /etc/caddy/Caddyfile on
+# the host and no systemctl caddy. The Caddyfile lives at
+# /srv/slate/infra/caddy/Caddyfile on the host (bind-mounted read-only
+# into the container). Edit the HOST file, then:
+#   docker exec slate-caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+#   docker exec slate-caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
+# Only reload after validation exits 0. A bad Caddyfile breaks every site
+# on the box, SLATE included.
+#
+# `reverse_proxy localhost:8001` does NOT work from inside the Caddy
+# container (localhost = the container itself). The Caddy container was
+# connected to the agent-platform_default network
+# (docker network connect agent-platform_default slate-caddy) and the
+# route points at the container by name on its INTERNAL port 8000
+# (the 8001 mapping is host-side only).
 
 agents.40.160.149.104.nip.io {
-	reverse_proxy localhost:8001
+	reverse_proxy agent-platform:8000
 }

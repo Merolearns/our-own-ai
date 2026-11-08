@@ -81,7 +81,15 @@ the route exists the app is verified over SSH only, not via a public URL.
 After the route is live: screenshot the chat page as `images/13-live-deploy.png`
 (headless Chromium, same as Builder A's 01-12).
 
-Handed to the SLATE side chat Nov 8 (after run 6) — pending their reply.
+Handed to the SLATE side chat Nov 8 (after run 6) — LIVE the same day:
+route appended, validated, reloaded; healthz 200 at
+https://agents.40.160.149.104.nip.io/healthz. Adaptations (Caddy is a
+container, not a host service): Caddyfile at /srv/slate/infra/caddy/Caddyfile,
+validate/reload via `docker exec slate-caddy caddy ...`; reverse_proxy
+agent-platform:8000 (container name + internal port) after connecting
+slate-caddy to the agent-platform_default network — localhost:8001 does not
+work from inside the Caddy container. See deploy/caddy-snippet for the
+applied block. SLATE healthy after the reload.
 
 ## 5. After the first deploy — live-model keys (parent, when ready)
 The first deploy runs in DEMO MODE (no LLM keys): the app answers from its
