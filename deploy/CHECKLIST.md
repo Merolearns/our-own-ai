@@ -1,10 +1,13 @@
 # deploy/CHECKLIST.md — first live deploy (parent steps + what happens when)
 
-Status: the code is ready; the deploy is blocked on TWO parent-side actions
-in the browser (neither can be done from this VM — both tokens return 403).
-Everything below is written; nothing is guessed.
+Status: DEPLOYED (Nov 8, 2026, workflow run 6, commit 0b435aa1) — the app
+is live on the VPS at localhost:8001, smoke test green. The public URL
+still needs the one-time Caddy route (§4, handed to the SLATE side chat
+Nov 8 — pending their reply). Everything below is written; nothing is guessed.
 
 ## 1. Parent action A — land the workflow files (browser, GitHub web UI)
+DONE Nov 8, 2026 (commit 1be8003, via the repo web UI). The rest of this
+section is the record of how it was done.
 The vault PAT and the gh CLI PAT both lack the **Workflows** permission, so
 no workflow file can be pushed by API or git (verified Nov 8, 2026: a tree
 containing any `.github/workflows/` path is refused with 403, while a tree
@@ -25,6 +28,7 @@ re-fight the API route. (Also note: the token edit needed a sudo-mode
 email code to meroatschool@gmail.com — the protected-lookup flow.)
 
 ## 2. Parent action B — set three repo secrets (browser, repo Settings -> Secrets)
+DONE Nov 8, 2026 (all three set; confirmed in the secrets table 05:02–05:03 PST).
 - `VPS_SSH_KEY` — the SSH private key for root@40.160.149.104 (the SLATE
   deploy key, `~/.ssh/id_slate_deploy` on the dev VM; the value never leaves
   the browser form / GitHub secrets).
@@ -47,6 +51,27 @@ question: $50 with sources, demo banner, no ShipFast), backup cron
 installed, disk guard (>= 5 GB free or abort). Any failure aborts the run
 with the numbers in the log.
 
+Deploy runs (Nov 8, 2026, all by API dispatch):
+- Run 1 (42483353062): FAILED — bind for 127.0.0.1:8000 failed, port already
+  allocated (SLATE's API). Fix: host port 8000 -> 8001 (commit 17abd147).
+- Run 2 (42483897087): FAILED — smoke test login as demo: HTTP 400. Cause:
+  SESSION_COOKIE_SECURE=1 + cookiejar dropping the Secure cookie over plain
+  HTTP. Fix: smoke test carries cookies manually + captures the 302's
+  Set-Cookie (commit ab299226; verified locally first).
+- Run 3 (42484637062): FAILED — RAM gate: 3340 MB free vs 3584 MB needed,
+  while the run-2 container held 1.664 GiB. Fix: gate counts the running
+  container's RAM as reclaimable (commit 01aff05c).
+- Run 4 (42485001507): FAILED — port check: 127.0.0.1:8001 "already in use"
+  by docker-proxy (the run-2 container legitimately holds it). Fix: port
+  check skips when the agent-platform container itself is up (commit 0b435aa1).
+- Run 5 (42485296313): FAILED — SSH step hung 120s (LoginGraceTime) then
+  "Connection closed by 40.160.149.104 port 22". Transient: same key/config
+  worked in runs 1–4 and 6. No code change; retried.
+- Run 6 (42485635901): SUCCESS — RAM gate 3464 + 1655 reclaimable = 5119 MB
+  effective, healthz ok after ~10s, smoke test all checks passed, backup
+  cron installed, disk free 36G. AGENT_SECRET generated on first install.
+  Deploy ok: 0b435aa1 live on localhost:8001.
+
 ## 4. One-time Caddy route (parent / SLATE side chat, vps-ops)
 Append `deploy/caddy-snippet` (host `agents.40.160.149.104.nip.io`,
 reverse-proxy to localhost:8001) to the VPS Caddyfile BELOW SLATE's blocks,
@@ -55,6 +80,8 @@ takes SLATE down too — never reload a file that failed validation. Until
 the route exists the app is verified over SSH only, not via a public URL.
 After the route is live: screenshot the chat page as `images/13-live-deploy.png`
 (headless Chromium, same as Builder A's 01-12).
+
+Handed to the SLATE side chat Nov 8 (after run 6) — pending their reply.
 
 ## 5. After the first deploy — live-model keys (parent, when ready)
 The first deploy runs in DEMO MODE (no LLM keys): the app answers from its
@@ -84,5 +111,5 @@ users touch the app.
   SQLite file (probe over every table); stored trace shows `[REDACTED]`.
 - Gemini Flash-Lite model ID `gemini-3.5-flash-lite` verified from Google's
   own docs (GA Jul 21, 2026; retirement Jul 21, 2027 or later).
-- Remote main: `ccf468be` (A11 fix + CI + measure workflow, minus the three
-  workflow files that cannot be pushed — see action A above).
+- Remote main: `0b435aa1` (deploy fixes: port 8001, smoke-test Secure
+  cookies, redeploy-aware RAM gate + port check).
