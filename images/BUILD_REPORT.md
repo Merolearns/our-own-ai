@@ -110,5 +110,8 @@ Sources with `[1]` numbers, demo-mode banner throughout.
 
 ## Commits
 
-- `9829c33` — Build agent engine and Parcelco Nova agent (48 files)
-- (verification fixes + this report — see `git log`)
+- Local: `9829c33` — Build agent engine and Parcelco Nova agent (48 files);
+  `732b636` — verification fixes + this report.
+- Remote (GitHub, main): `b5e84063` — same tree as local `732b636`
+  (`f6830bf7`, verified identical). Seed commit `dbb56070` (`.gitignore`
+  only) sits below it. https://github.com/Merolearns/our-own-ai
