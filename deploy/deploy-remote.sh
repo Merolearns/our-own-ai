@@ -85,7 +85,12 @@ log "building image on the VPS (pip install; models download at first boot, not 
 docker compose -f "$COMPOSE_FILE" build
 log "starting container"
 # --- 2b. Host port must be free (SLATE's API owns 127.0.0.1:8000) -----------
-if command -v ss >/dev/null; then
+# On a redeploy the running agent-platform container legitimately holds
+# 8001 (its docker-proxy listener); compose recreates it and re-binds.
+# Only a FOREIGN listener is an error — run 4 tripped on our own.
+if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx 'agent-platform'; then
+  log "agent-platform container is running (redeploy) — it holds 127.0.0.1:8001, compose will re-bind it"
+elif command -v ss >/dev/null; then
   if ss -ltn 2>/dev/null | grep -q '127.0.0.1:8001'; then
     log "ERROR: 127.0.0.1:8001 is already in use:"
     ss -ltnp 2>/dev/null | grep '8001' || true
