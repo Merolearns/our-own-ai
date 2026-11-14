@@ -255,7 +255,16 @@ def ingest_docs(db_path, agent, docs_dir, embedder=None):
 
 def ensure_ingested(db_path, agent, docs_dir, embedder=None) -> bool:
     """Rebuild only when documents changed or stored vectors are missing."""
+    docs_dir = Path(docs_dir)
+    if not docs_dir.is_dir():
+        raise FileNotFoundError(
+            f"corpus directory missing for agent {agent!r}: {docs_dir}"
+        )
     chunks = _chunk_directory(docs_dir)
+    if not chunks:
+        raise ValueError(
+            f"corpus for agent {agent!r} yielded zero chunks from {docs_dir}"
+        )
     stored = {row["text"] for row in store.list_chunks(db_path, agent)}
     stale = embedder is not None and store.count_stale_embeddings(
         db_path, agent, embedder.dim

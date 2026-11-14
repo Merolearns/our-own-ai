@@ -62,6 +62,32 @@ a plain module it calls in order.
 | 8. Observability | `store.py` traces/llm_calls/tool_calls/retrieval_hits, `app.py` /traces |
 | 9. Evals gate | `tools/eval_run.py`, `evals/`, `tests/test_*eval*.py` |
 
+## Named layers (ReStructure pattern, Nov 14, 2026)
+
+The eight layers above group into three named layers, borrowed from the
+ReStructure AI "41 AI Agents" blueprint (reel DftyCsjCFJ4 — see
+`~/workspace/reel-DftyCsjCFJ4-understanding.md`). We take the names, not
+the product: no 41-agent goal (three agents on one shared engine is the
+right scale), no € figures (unverified demo numbers, never reused).
+
+- **System of record** — `store.py` (SQLite): users, orders, refunds,
+  tickets, approvals, traces, cache. The one place state lives; every
+  tool call and every money movement is recorded here first.
+- **Knowledge layer** — `rag.py` + `data/<agent>/` + embeddings/reranker:
+  what the agent is allowed to say, grounded in the verified corpus with
+  citations. Anything not in the corpus is deflected, never invented.
+- **Budget guard** — `router.py` + `config/routing.json` +
+  `config/pricing.json` + `cache.py`: tier routing (simple/standard/
+  complex), the $5 budget guard (routes everything to Gemini free when
+  low), provider quotas read at build time, never hard-coded.
+
+**Chief of Staff pattern.** One orchestrator for thinking (the agent
+loop in `app.py:run_turn`) + a fast router for quick calls (the tier
+router — simple questions never wake the heavy path) + a human approval
+gate ("nothing goes out until you approve it": the `approvals` table and
+the staff queue, see below). The approval gate is the load-bearing part
+— it is never skipped, never auto-approved, and expiry means NO.
+
 ## Agents on one process (host routing)
 
 One process serves every agent; the request Host header picks which one

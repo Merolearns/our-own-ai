@@ -9,7 +9,7 @@ COPY tools tools
 COPY config config
 COPY static static
 COPY templates templates
-COPY data/parcelco data/parcelco
+COPY data data
 RUN useradd --create-home app \
     && mkdir -p /data/models \
     && chown -R app:app /data

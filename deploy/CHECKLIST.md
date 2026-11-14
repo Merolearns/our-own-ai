@@ -76,6 +76,18 @@ Deploy runs (Nov 8, 2026, all by API dispatch):
   effective, healthz ok after ~10s, smoke test all checks passed, backup
   cron installed, disk free 36G. AGENT_SECRET generated on first install.
   Deploy ok: 0b435aa1 live on localhost:8001.
+- Run 7 (42489778919, Scoopy build, commit 96078b98): FAILED — image built
+  fine, container recreated and started, but /healthz never came up in the
+  10-min poll ("ERROR: /healthz never came up in 10 min"). The container
+  log showed only gunicorn starting. The new container KEPT RUNNING (the
+  failure is after the container start): both login pages load with the
+  correct agent branding, so host routing works — but /healthz is STILL
+  503 on both hosts six days later (Nov 14). Cause under diagnosis: the
+  Scoopy build made /healthz require chunks for BOTH agents; either the
+  Scoopy corpus never got chunks or the check errors. Diagnosis dispatched
+  to the SLATE side chat Nov 14 (container logs + per-agent chunk counts
+  + restart state). Do NOT re-run the deploy until the cause is found —
+  a re-run would rebuild the same image and fail at the same step.
 
 ## 4. One-time Caddy route (parent / SLATE side chat, vps-ops)
 Append `deploy/caddy-snippet` (host `agents.40.160.149.104.nip.io`,

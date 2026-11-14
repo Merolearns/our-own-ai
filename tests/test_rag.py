@@ -109,6 +109,15 @@ def test_ensure_ingested_fills_missing_vectors(db):
     assert store.count_stale_embeddings(db, "parcelco", 1024) == 0
 
 
+def test_ensure_ingested_fails_loudly_on_missing_or_empty_corpus(db, tmp_path):
+    with pytest.raises(FileNotFoundError, match="corpus directory missing"):
+        rag.ensure_ingested(db, "scoopy", tmp_path / "does-not-exist", rag.FakeEmbedder())
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    with pytest.raises(ValueError, match="zero chunks"):
+        rag.ensure_ingested(db, "scoopy", empty, rag.FakeEmbedder())
+
+
 def test_hybrid_retrieval_finds_policy(db):
     embedder = rag.FakeEmbedder()
     rag.ingest_docs(db, "parcelco", DOCS, embedder)
