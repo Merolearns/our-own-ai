@@ -6,7 +6,7 @@
 #
 # Steps, each failing loudly (set -euo pipefail; a failure aborts the run
 # and the workflow reports it — never silently serve a broken deploy):
-#   0. RAM gate: refuse unless >= 3.5 GB is free (app needs ~2.5 GB RSS);
+#   0. RAM gate: refuse unless >= 5 GB is free (app needs ~2.9-3.4 GB RSS);
 #      a running agent-platform container's RAM counts, since the redeploy
 #      frees it before the new container starts.
 #   1. Ensure AGENT_SECRET exists in /srv/agent-platform/.env (generated
@@ -55,9 +55,9 @@ if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx 'agent-platform'; then
   log "running agent-platform container holds ${USAGE:-unknown} (${RECLAIM_MB} MB) — freed on recreate, counted toward the gate"
 fi
 EFFECTIVE_MB=$((FREE_MB + RECLAIM_MB))
-log "free RAM: ${FREE_MB} MB (+ ${RECLAIM_MB} MB reclaimable = ${EFFECTIVE_MB} MB effective; need >= 3584 MB for the app + SLATE headroom)"
-if [ "$EFFECTIVE_MB" -lt 3584 ]; then
-  log "ERROR: not enough free RAM to start the app (free=${FREE_MB} MB + reclaimable=${RECLAIM_MB} MB = ${EFFECTIVE_MB} MB, need 3584 MB)."
+log "free RAM: ${FREE_MB} MB (+ ${RECLAIM_MB} MB reclaimable = ${EFFECTIVE_MB} MB effective; need >= 5120 MB for the app + SLATE headroom)"
+if [ "$EFFECTIVE_MB" -lt 5120 ]; then
+  log "ERROR: not enough free RAM to start the app (free=${FREE_MB} MB + reclaimable=${RECLAIM_MB} MB = ${EFFECTIVE_MB} MB, need 5120 MB)."
   log "Do not lower the limit to force it — report the numbers instead."
   docker stats --no-stream --format '{{.Name}} {{.MemUsage}}' 2>/dev/null || true
   exit 1

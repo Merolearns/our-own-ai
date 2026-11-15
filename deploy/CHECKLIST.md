@@ -49,7 +49,7 @@ repo secret and is never printed.
 ## 3. Trigger the deploy (browser, Actions tab -> deploy -> Run workflow)
 The workflow runs, in order: SSH setup -> repo sync at the exact SHA ->
 .env written from secrets (mode 600, never printed) -> compose copied ->
-`deploy-remote.sh` on the VPS: RAM gate (>= 3.5 GB free, counting the running container's RAM as reclaimable on a redeploy, or abort with
+`deploy-remote.sh` on the VPS: RAM gate (>= 5 GB free, counting the running container's RAM as reclaimable on a redeploy, or abort with
 numbers), build on the VPS, up -d, /healthz poll up to 10 min (first boot
 downloads ~2.3 GB of models), end-to-end smoke (login + refund-policy
 question: $50 with sources, demo banner, no ShipFast), backup cron
@@ -82,12 +82,25 @@ Deploy runs (Nov 8, 2026, all by API dispatch):
   log showed only gunicorn starting. The new container KEPT RUNNING (the
   failure is after the container start): both login pages load with the
   correct agent branding, so host routing works — but /healthz is STILL
-  503 on both hosts six days later (Nov 14). Cause under diagnosis: the
-  Scoopy build made /healthz require chunks for BOTH agents; either the
-  Scoopy corpus never got chunks or the check errors. Diagnosis dispatched
-  to the SLATE side chat Nov 14 (container logs + per-agent chunk counts
-  + restart state). Do NOT re-run the deploy until the cause is found —
-  a re-run would rebuild the same image and fail at the same step.
+  503 on both hosts six days later (Nov 14). Cause FOUND Nov 14 (local
+  repro): the Dockerfile copied only data/parcelco — no data/scoopy/ —
+  so startup ingestion on a missing dir silently stored zero chunks and
+  /healthz (requires chunks for BOTH agents) stayed 503. Fix: Dockerfile
+  `COPY data data` + ensure_ingested raises loudly on a missing/empty
+  corpus (commit 25e2ec31; 345 tests passed, 1 skipped). The "do NOT
+  re-run" hold is LIFTED — run 8 is the re-run.
+- Run 8 (43625130504, healthz fix, commit 25e2ec31): FAILED — healthz ok
+  after ~35s (the fix worked; healthz 200 on both hosts after), Parcelco
+  smoke all passed, Scoopy branding passed, then the Scoopy pricing chat
+  died with RemoteDisconnected (server closed the connection, no HTTP
+  response). Cause FOUND Nov 14 (local repro, exact deploy setup): the
+  worker's RSS grows to ~2.9-3.4 GB while serving chats, exceeding the
+  container's mem_limit 3g, so the kernel OOM-kills the gunicorn worker
+  mid-request; gunicorn restarts it, which is why healthz is 200 after.
+  The Scoopy pricing chat was the largest single-chat jump (+380 MB).
+  Fix: mem_limit 3g -> 4g, RAM gate 3584 -> 5120 MB, comments corrected
+  (this commit). VPS math: 8 GB box, SLATE ~3.7 GB, ~4.3 GB for the app —
+  a 4g limit fits (barely); the gate verifies free RAM at deploy time.
 
 ## 4. One-time Caddy route (parent / SLATE side chat, vps-ops)
 Append `deploy/caddy-snippet` (host `agents.40.160.149.104.nip.io`,

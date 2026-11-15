@@ -13,13 +13,21 @@
 # build` on the box, then `up -d`. `image: agent-platform:local` is the
 # local tag the build produces; never push it anywhere.
 #
-# Memory: the app needs ~2.5 GB RSS with BGE-M3 + reranker loaded (measured
-# Nov 8, Builder A smoke server). mem_limit 3g is the measured need plus
+# Memory: the app needs ~2.9-3.4 GB RSS with BGE-M3 + reranker loaded
+# (measured Nov 14, two-agent worker, full smoke test; the old 2.5 GB
+# figure was Parcelco-only). mem_limit 4g is the measured need plus
 # headroom — it is ENFORCED, not guessed: deploy/deploy-remote.sh measures
 # free RAM on the box first and refuses to start the container unless at
-# least 3.5 GB is free (app 2.5 + 1.0 headroom for SLATE), printing the
+# least 5 GB is free (app 4 + 1.0 headroom for SLATE), printing the
 # numbers. If the box cannot spare it, the deploy aborts and the numbers
 # go in the report — do not lower the limit to force it.
+#
+# Nov 14, run 8: the 3g limit OOM-killed the worker mid-chat (RSS hit
+# 3.38 GB on the fresh-boot smoke test; the Scoopy pricing chat was the
+# largest single-chat jump, +380 MB). The kernel kill drops the connection
+# with no HTTP response (RemoteDisconnected) and gunicorn restarts the
+# worker, so healthz goes green again after — a 3g limit looks healthy
+# while chats die. Never set the limit below the measured peak again.
 #
 # Secrets: NEVER in this file or the repo. LLM keys (DEEPSEEK_API_KEY,
 # GEMINI_API_KEY) and backup R2 credentials live in /srv/agent-platform/.env
@@ -53,7 +61,7 @@ services:
       # All durable state (SQLite DB + fastembed model cache) lives here.
       - agent-data:/data
     # Hard limits so this app can never starve SLATE on the shared 8 GB box.
-    mem_limit: 3g
+    mem_limit: 4g
     cpus: 1.0
     healthcheck:
       # /healthz = app up + SQLite readable + vector store present.
